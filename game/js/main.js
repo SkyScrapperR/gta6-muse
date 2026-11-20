@@ -13,7 +13,10 @@ import { Input } from './core/input.js';
 import { CharacterSystem } from './entities/character.js';
 import { Player } from './entities/player.js';
 import { VehicleSystem } from './entities/vehicle.js';
-import { findRoute, routeWaypoints, nearestNode } from './world/roads.js';
+import { TrafficLights } from './world/roads.js';
+import { TrafficManager } from './ai/traffic.js';
+import { PedestrianSystem } from './entities/pedestrian.js';
+import { PoliceSystem } from './ai/police.js';
 import { makeRng, rngInt } from './core/math.js';
 
 const glCanvas = document.getElementById('gl');
@@ -51,7 +54,8 @@ player.spawn(pier.x, pier.z, Math.PI);
 
 // --- Vehicles: one mission car by the pier, parked cars, and traffic. ---
 const vehicles = new VehicleSystem(renderer, city, charSystem);
-vehicles.add('merpati', 4, pier.z - 24, Math.PI);
+const pierCar = vehicles.add('merpati', 4, pier.z - 24, Math.PI);
+pierCar.mission = 'm1';
 const vRng = makeRng(4242);
 const parkedTypes = ['kancil', 'merpati', 'bajak', 'taxi', 'vesper'];
 for (let i = 0; i < 8; i++) {
@@ -60,16 +64,30 @@ for (let i = 0; i < 8; i++) {
   const [rx, rz] = [Math.round(px / 104) * 104, Math.round(pz / 104) * 104];
   vehicles.add(parkedTypes[i % parkedTypes.length], rx + 10, rz + rngInt(vRng, -30, 30), vRng() * Math.PI * 2);
 }
-for (let i = 0; i < 6; i++) {
-  const from = nearestNode(-300 + vRng() * 600, -300 + vRng() * 600);
-  const to = nearestNode(-300 + vRng() * 600, -300 + vRng() * 600);
-  const route = findRoute(from, to);
-  const pts = routeWaypoints(route);
-  const car = vehicles.add(parkedTypes[i % parkedTypes.length], pts[0][0], pts[0][1], Math.atan2(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]));
-  car.parked = false;
-  car.route = pts;
-  car.routeIndex = 1;
-}
+
+// --- Traffic, pedestrians, police. ---
+const lights = new TrafficLights(20261121);
+const traffic = new TrafficManager(vehicles, lights, city);
+traffic.spawn(6);
+const peds = new PedestrianSystem(charSystem, city);
+peds.spawn(24);
+const police = new PoliceSystem(vehicles, charSystem, city, player);
+peds.onPedHit = (ped, vehicle) => {
+  peds.fleeFrom(ped.c.x, ped.c.z, 30);
+  if (vehicle.driver === player) police.addWanted(1);
+};
+player.onEnterCar = (car, wasParked) => {
+  // Stealing a stranger's parked car in front of a witness is a crime.
+  if (car.mission || !wasParked) return;
+  const nearCop = police.copCars.some((c) => Math.hypot(c.v.x - car.x, c.v.z - car.z) < 80)
+    || police.footCops.some((c) => Math.hypot(c.c.x - car.x, c.c.z - car.z) < 40);
+  if (nearCop) police.addWanted(1);
+};
+police.onArrest = () => {
+  const hq = city.landmark('policeHQ');
+  player.arrest(hq.x, hq.z);
+  police.clearWanted();
+};
 
 const PROP_BATCHES = [
   'prop-lamp', 'prop-tree', 'prop-palm', 'prop-bench', 'prop-bin',
@@ -78,10 +96,11 @@ const PROP_BATCHES = [
 ];
 
 function frame(now) {
-  const dt = Math.min((now - lastTime) / 1000, 0.1);
+  const realDt = (now - lastTime) / 1000;
+  const dt = Math.min(realDt, 0.1);
   lastTime = now;
   fpsFrames++;
-  fpsTime += dt;
+  fpsTime += realDt;
   if (fpsTime >= 0.5) {
     fps = Math.round(fpsFrames / fpsTime);
     fpsFrames = 0;
@@ -91,9 +110,9 @@ function frame(now) {
   camAngle += dt * 0.08;
   void camAngle;
   player.update(dt, now / 1000, vehicles);
-  for (const v of vehicles.vehicles) {
-    if (!v.driver && v.route) v.autopilot(dt, null, now / 1000);
-  }
+  traffic.update(dt, now / 1000, player);
+  peds.update(dt, now / 1000, vehicles);
+  police.update(dt, now / 1000);
   vehicles.update(dt, now / 1000);
   charSystem.update(dt, now / 1000);
   const camera = player.cameraForRender();
@@ -117,7 +136,8 @@ function frame(now) {
   hud.fillText(`SELARA BAY — driving — ${fps} fps`, 16, 30);
   hud.font = '14px sans-serif';
   const carInfo = player.inCar ? ` — ${player.inCar.name} ${(Math.abs(player.inCar.speed) * 3.6).toFixed(0)} km/h` : '';
-  hud.fillText(`draw calls ${renderer.drawCalls} — tris ${renderer.triangles} — ${city.districtNameAt(player.x, player.z)} — ${player.speed.toFixed(1)} m/s${carInfo}`, 16, 54);
+  const stars = '★'.repeat(police.wanted) + '☆'.repeat(5 - police.wanted);
+  hud.fillText(`draw calls ${renderer.drawCalls} — tris ${renderer.triangles} — ${city.districtNameAt(player.x, player.z)} — ${player.speed.toFixed(1)} m/s${carInfo} — ${stars} — peds ${peds.peds.length}`, 16, 54);
   input.endFrame();
 
   requestAnimationFrame(frame);
@@ -127,12 +147,16 @@ requestAnimationFrame(frame);
 
 // Debug hook for the automated playtest: real state, never a stub.
 window.__selara = {
-  version: 'drive-0',
+  version: 'traffic-0',
   renderer,
   player,
   city,
   input,
   vehicles,
+  traffic,
+  peds,
+  police,
+  lights,
   get fps() { return fps; },
   get hour() { return hour; },
   setHour(h) { hour = h; },

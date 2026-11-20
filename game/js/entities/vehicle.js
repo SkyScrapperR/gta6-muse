@@ -115,6 +115,8 @@ export class Vehicle {
     this.color = color ?? this.type.color;
     this.doorAngle = 0; // 0 closed .. 1 open
     this.doorTarget = 0;
+    this.stopForLight = false; // AI: braking for a light or a blocker
+    this.honk = false; // AI: leaning on the horn at a blocker
     this.smokeT = 0;
     this.mission = null; // mission id that owns this car
     this.route = null; // waypoint list for autopilot
@@ -129,13 +131,19 @@ export class Vehicle {
   }
 
   // Arcade step with direct inputs: throttle -1..1, steer -1..1, handbrake.
+  // Negative throttle brakes while rolling forward and only reverses once
+  // the car has nearly stopped (GTA-style S key).
   step(dt, throttle, steer, handbrake) {
     if (this.wreck) return;
     const t = this.type;
-    const target = throttle * t.top;
-    const accel = throttle !== 0 ? t.accel : 6;
-    if (this.speed < target) this.speed = Math.min(target, this.speed + accel * dt);
-    else if (this.speed > target) this.speed = Math.max(target, this.speed - accel * 1.6 * dt);
+    if (throttle < 0 && this.speed > 0.5) {
+      this.speed = Math.max(0, this.speed - t.accel * 2.2 * dt);
+    } else {
+      const target = throttle * t.top;
+      const accel = throttle !== 0 ? t.accel : 6;
+      if (this.speed < target) this.speed = Math.min(target, this.speed + accel * dt);
+      else if (this.speed > target) this.speed = Math.max(target, this.speed - accel * 1.6 * dt);
+    }
     if (handbrake) this.speed *= Math.max(0, 1 - dt * 1.8);
     const maxSteer = 0.55 * (1 - Math.min(Math.abs(this.speed) / t.top, 1) * 0.55);
     this.steer += (steer * maxSteer - this.steer) * Math.min(1, dt * 10);

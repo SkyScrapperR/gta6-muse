@@ -48,6 +48,18 @@ export class Player {
     });
   }
 
+  // Arrested: cuffed, dropped at Police HQ, $100 lighter, weapons gone.
+  arrest(x, z) {
+    if (this.inCar) {
+      this.inCar.driver = null;
+      this.inCar = null;
+    }
+    this.money = Math.max(0, this.money - 100);
+    this.weapons = ['fists'];
+    this.ammo = {};
+    this.spawn(x, z, 0);
+  }
+
   spawn(x, z, heading = 0) {
     this.x = x; this.z = z; this.y = 0;
     this.vx = 0; this.vz = 0; this.vy = 0;
@@ -207,12 +219,14 @@ export class Player {
   }
 
   enterCar(car) {
+    const wasParked = car.parked;
     this.inCar = car;
     car.driver = this;
     car.parked = false;
     car.doorTarget = 1;
     car.doorTimer = 0.9;
     this.char.pose = 'drive';
+    if (this.onEnterCar) this.onEnterCar(car, wasParked);
   }
 
   exitCar() {
