@@ -90,13 +90,29 @@ export class Player {
       return;
     }
     if (this.inCar) {
+      // Chase camera: the mouse can look around, the view re-centres behind
+      // the car 1.5 s after the last mouse movement.
+      const [mdx, mdy] = input.consumeMouse();
+      if (mdx !== 0 || mdy !== 0) this.lastMouseAt = time;
+      this.camYaw += mdx * 0.0032;
+      this.camPitch = clamp(this.camPitch + mdy * 0.0028, -0.1, 0.9);
+      if (time - (this.lastMouseAt ?? -99) > 1.5) {
+        this.camYaw += angleDelta(this.camYaw, this.inCar.heading) * Math.min(1, dt * 2.5);
+      }
+      this.camDist += (9 - this.camDist) * Math.min(1, dt * 4);
       // The car drives; Kai sits. The vehicle module moves us.
       this.inCar.drive(dt, this.input, this);
       this.x = this.inCar.x;
       this.z = this.inCar.z;
       this.heading = this.inCar.heading;
       this.char.pose = 'drive';
-      this.syncChar();
+      // Seat the character in the driver's seat.
+      const [sx, sz] = this.inCar.seatPos();
+      this.char.x = sx;
+      this.char.z = sz;
+      this.char.y = 0.55;
+      this.char.heading = this.inCar.heading;
+      this.char.speed = 0;
       this.updateCamera(dt);
       return;
     }
@@ -104,7 +120,7 @@ export class Player {
     const input = this.input;
     const [mdx, mdy] = input.consumeMouse();
     this.camYaw += mdx * 0.0032;
-    this.camPitch = clamp(this.camPitch - mdy * 0.0028, -0.15, 1.1);
+    this.camPitch = clamp(this.camPitch + mdy * 0.0028, -0.15, 1.1);
 
     // Aim: right mouse tightens the camera and slows movement.
     this.aiming = input.mouseRight && this.weapon !== 'fists';
@@ -148,6 +164,11 @@ export class Player {
     const resolved = this.city.collision.resolveCircle(this.x, this.z, 0.45);
     this.x = resolved.x;
     this.z = resolved.z;
+    if (vehicles) {
+      const pushed = vehicles.resolveWalker(this.x, this.z, 0.45);
+      this.x = pushed.x;
+      this.z = pushed.z;
+    }
     this.speed = Math.hypot(this.vx, this.vz);
 
     // Face the movement direction; when aiming, face the camera.
@@ -188,6 +209,9 @@ export class Player {
   enterCar(car) {
     this.inCar = car;
     car.driver = this;
+    car.parked = false;
+    car.doorTarget = 1;
+    car.doorTimer = 0.9;
     this.char.pose = 'drive';
   }
 
@@ -195,6 +219,8 @@ export class Player {
     if (!this.inCar) return;
     const car = this.inCar;
     car.driver = null;
+    car.doorTarget = 1;
+    car.doorTimer = 0.9;
     this.inCar = null;
     // Step out to the car's left side.
     const sx = Math.cos(car.heading);
@@ -211,13 +237,14 @@ export class Player {
 
   updateCamera(dt) {
     void dt;
-    // Target: just above Kai's head. Desired camera sits behind and above.
+    // Target: just above Kai's head. The camera sits behind and above,
+    // looking down at him; pitch > 0 means looking down.
     const target = [this.x, this.y + 1.7, this.z];
     const pitch = this.camPitch;
     const yaw = this.camYaw;
     const dir = [
       Math.sin(yaw) * Math.cos(pitch),
-      Math.sin(pitch),
+      -Math.sin(pitch),
       Math.cos(yaw) * Math.cos(pitch),
     ];
     let dist = this.camDist;
@@ -238,12 +265,15 @@ export class Player {
     if (this.camPos[1] < 0.6) this.camPos[1] = 0.6;
   }
 
-  // Camera for the renderer.
+  // Camera for the renderer. In a car the field of view widens with speed.
   cameraForRender() {
+    let fovDeg = 62;
+    if (this.inCar) fovDeg = 62 + Math.min(Math.abs(this.inCar.speed) * 0.4, 16);
+    else if (this.aiming) fovDeg = 50;
     return {
       pos: this.camPos ?? [this.x, this.y + 5, this.z + 8],
       target: this.camTarget ?? [this.x, this.y + 1.5, this.z],
-      fov: this.aiming ? (50 * Math.PI) / 180 : (62 * Math.PI) / 180,
+      fov: (fovDeg * Math.PI) / 180,
       near: 0.3,
       far: 3000,
     };

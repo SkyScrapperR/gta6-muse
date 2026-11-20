@@ -12,6 +12,9 @@ import { buildWorld } from './world/city-meshes.js';
 import { Input } from './core/input.js';
 import { CharacterSystem } from './entities/character.js';
 import { Player } from './entities/player.js';
+import { VehicleSystem } from './entities/vehicle.js';
+import { findRoute, routeWaypoints, nearestNode } from './world/roads.js';
+import { makeRng, rngInt } from './core/math.js';
 
 const glCanvas = document.getElementById('gl');
 const hudCanvas = document.getElementById('hud');
@@ -46,6 +49,28 @@ const player = new Player(charSystem, city, input);
 const pier = city.ferryPier;
 player.spawn(pier.x, pier.z, Math.PI);
 
+// --- Vehicles: one mission car by the pier, parked cars, and traffic. ---
+const vehicles = new VehicleSystem(renderer, city, charSystem);
+vehicles.add('merpati', 4, pier.z - 24, Math.PI);
+const vRng = makeRng(4242);
+const parkedTypes = ['kancil', 'merpati', 'bajak', 'taxi', 'vesper'];
+for (let i = 0; i < 8; i++) {
+  const px = -300 + vRng() * 600;
+  const pz = -300 + vRng() * 600;
+  const [rx, rz] = [Math.round(px / 104) * 104, Math.round(pz / 104) * 104];
+  vehicles.add(parkedTypes[i % parkedTypes.length], rx + 10, rz + rngInt(vRng, -30, 30), vRng() * Math.PI * 2);
+}
+for (let i = 0; i < 6; i++) {
+  const from = nearestNode(-300 + vRng() * 600, -300 + vRng() * 600);
+  const to = nearestNode(-300 + vRng() * 600, -300 + vRng() * 600);
+  const route = findRoute(from, to);
+  const pts = routeWaypoints(route);
+  const car = vehicles.add(parkedTypes[i % parkedTypes.length], pts[0][0], pts[0][1], Math.atan2(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]));
+  car.parked = false;
+  car.route = pts;
+  car.routeIndex = 1;
+}
+
 const PROP_BATCHES = [
   'prop-lamp', 'prop-tree', 'prop-palm', 'prop-bench', 'prop-bin',
   'prop-hydrant', 'prop-busstop', 'prop-crane', 'prop-boat',
@@ -65,7 +90,11 @@ function frame(now) {
 
   camAngle += dt * 0.08;
   void camAngle;
-  player.update(dt, now / 1000, null);
+  player.update(dt, now / 1000, vehicles);
+  for (const v of vehicles.vehicles) {
+    if (!v.driver && v.route) v.autopilot(dt, null, now / 1000);
+  }
+  vehicles.update(dt, now / 1000);
   charSystem.update(dt, now / 1000);
   const camera = player.cameraForRender();
   const palette = skyPalette(hour);
@@ -78,15 +107,17 @@ function frame(now) {
   for (const [name, bounds] of world.chunkBounds) renderer.drawChunk(name, bounds);
   for (const name of PROP_BATCHES) renderer.drawBatch(name);
   charSystem.draw();
+  vehicles.draw();
   renderer.drawWater(palette, t, 520);
   renderer.endFrame();
 
   hud.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
   hud.fillStyle = 'rgba(255,255,255,0.9)';
   hud.font = 'bold 20px sans-serif';
-  hud.fillText(`SELARA BAY — on foot — ${fps} fps`, 16, 30);
+  hud.fillText(`SELARA BAY — driving — ${fps} fps`, 16, 30);
   hud.font = '14px sans-serif';
-  hud.fillText(`draw calls ${renderer.drawCalls} — tris ${renderer.triangles} — ${city.districtNameAt(player.x, player.z)} — ${player.speed.toFixed(1)} m/s`, 16, 54);
+  const carInfo = player.inCar ? ` — ${player.inCar.name} ${(Math.abs(player.inCar.speed) * 3.6).toFixed(0)} km/h` : '';
+  hud.fillText(`draw calls ${renderer.drawCalls} — tris ${renderer.triangles} — ${city.districtNameAt(player.x, player.z)} — ${player.speed.toFixed(1)} m/s${carInfo}`, 16, 54);
   input.endFrame();
 
   requestAnimationFrame(frame);
@@ -96,11 +127,12 @@ requestAnimationFrame(frame);
 
 // Debug hook for the automated playtest: real state, never a stub.
 window.__selara = {
-  version: 'walk-0',
+  version: 'drive-0',
   renderer,
   player,
   city,
   input,
+  vehicles,
   get fps() { return fps; },
   get hour() { return hour; },
   setHour(h) { hour = h; },
