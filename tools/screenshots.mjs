@@ -34,12 +34,15 @@ try {
     await page.goto(`http://localhost:${PORT}/?shot=${shot}`, { waitUntil: 'load' });
     // Screenshots are always captured on High at render scale 1.0
     // (prompt section 2). A static capture needs no real-time FPS: the
-    // scene is given time to settle below. Adaptive resolution does not
-    // exist yet, so there is nothing to disable for the capture.
+    // scene is given time to settle below. Adaptive resolution (step 17)
+    // is skipped in shot mode, but the cutscene shot returns to
+    // 'playing' — so High is re-applied right before the capture.
     await page.evaluate(() => window.__selara.game.applyQuality('high'));
     await page.waitForFunction(() => window.__shotReady, null, { timeout: 20000 });
     // Let the scene settle (traffic moves, the cutscene line shows).
     await page.waitForTimeout(6000);
+    await page.evaluate(() => window.__selara.game.applyQuality('high'));
+    await page.waitForTimeout(500);
     const out = `/home/hatch/workspace/selara-bay-final-entry/screenshots/${FILES[shot]}`;
     await page.screenshot({ path: out, type: 'jpeg', quality: 82 });
     const size = statSync(out).size;

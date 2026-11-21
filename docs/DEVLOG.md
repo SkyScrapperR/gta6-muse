@@ -10,7 +10,12 @@ prompt, 21 Nov 10:12) before continuing.
 c054f5c; playtest 26/26, FPS + screenshots below). **Step 16 of 18
 (Tier 3): DONE 21 Nov ~13:30 WITA** (commit c012e27; probe 18/18).
 **Step 17 of 18 (Tier 3 polish): DONE 21 Nov ~14:00 WITA** (commit
-pending; probe 8/8 below). Next: **step 18** (final checkpoint).
+3af78c7; probe 8/8 below). **Step 18 of 18 (final checkpoint): DONE
+21 Nov ~13:50 WITA** (commit pending below) — screenshot staging
+fixes, the main.ts screenshot-size gate, README final text, and the
+final 4 screenshots. All 18 steps done; verification (full playtest
+run 3, main.ts determinism, compliance checker) follows in the same
+session.
 
 ## The main.ts contract (from the kit — step 1 revision)
 
@@ -492,6 +497,45 @@ money path $5,550 after M6 → $5,450 death → $5,350 arrest).
   `player.aiming` directly (player.update overwrites it from the
   mouse every frame); the real right mouse button fixed it.
 
+## Step 18 (final checkpoint, this session) — DONE 21 Nov ~13:50 WITA
+
+- **Screenshot staging fixes (the shots are the cover art — they
+  must read clean at 1280×720):**
+  - Chase shot: the seated driver's head sat 0.8 m ABOVE the cabin
+    roof (`char.y` 0.55, head joint 1.62 m vs roof ~1.36 m), so Kai
+    read as standing on the roof in every chase frame. `char.y`
+    is now -0.45 (head at 1.17 m, inside the solid glasshouse,
+    invisible from outside) in both `player.js` (driving) and
+    `shots.js` (chase setup).
+  - Cutscene shot: Kai stood EAST of Lin, so the close-up camera
+    sat south and the garage wall filled the left half of the
+    frame. Kai now stands WEST of Lin (camera north of her).
+  - Docks shot: the gang stood ~13 m from Kai (was ~17 m) so the
+    figures read, and the smoking truck sits 5 m past them and
+    3 m to the side — in frame beside the gang instead of 10 m
+    behind them, where it fell out of the shot.
+  - Orchid tag markers are gameplay hints, not scenery: `side.draw()`
+    is skipped in shot mode, where the floating purple box read
+    as a glitch.
+- **`main.ts` screenshot-size gate:** the program used to check
+  only byte size, so a wrong-size screenshot passed here and
+  failed only at the scorer. `imageDimensions()` now reads the
+  pixel size from the image bytes (JPEG SOF0/SOF2, PNG IHDR) and
+  enforces long side ≤ 1280 and short side ≥ 480, with a plain
+  error message.
+- **README final text:** controls table updated (Shift+aim =
+  slow-motion focus, E = save / tag / shop, Tab = stats, F3 =
+  FPS counter), and the "Coming next" line replaced with the
+  shipped Tier 3 list — roadblocks, shoot-down heli ($500
+  bounty), 12 tags, Kilat Respray, Bang Bang Arms, 3 radio
+  stations / 10 songs, stats screen, adaptive resolution.
+- **Screenshot tooling:** `tools/screenshots.mjs` re-applies High
+  right before the capture (the cutscene shot returns to
+  'playing', which re-applied the preset) and waits 500 ms —
+  the retaken 4 shots are on High at render scale 1.0.
+- **Screenshots retaken** on High 1280×720 (sizes below in
+  Open bugs; all ≤ 256 KiB).
+
 ## Open bugs / known gaps
 
 - **Playtest: 26/26 PASS, 0 console errors** (Checkpoint 2, 21 Nov
@@ -514,18 +558,22 @@ money path $5,550 after M6 → $5,450 death → $5,350 arrest).
   will run far faster; High is the screenshot quality and does not
   need real-time FPS.
 - **Checkpoint 2 done (step 15). Step 16 done (Tier 3 core).
-  Step 17 done (polish).** Next: step 18 (final checkpoint).
-- **Tier 3 remaining:** only the final checkpoint (step 18) —
-  main.ts re-verification, full playtest + FPS, final
-  screenshots, README gallery. Adaptive resolution, slow motion,
-  hit markers, food carts, soundtrack, roadblocks, heli
+  Step 17 done (polish). Step 18 done (final checkpoint).**
+  All 18 steps done — verification of the final state (full
+  playtest run 3, main.ts determinism, compliance checker) is
+  running in this session; results land in this section when
+  they are in.
+- **Tier 3 remaining:** nothing — adaptive resolution, slow
+  motion, hit markers, food carts, soundtrack, roadblocks, heli
   shoot-down, tags, respray, gun shop, stats screen all DONE and
-  probed.
-- **Screenshots:** 4 retaken at Checkpoint 2 on High 1280×720
-  (01-title 65,988 B; 02-night-chase 54,078 B;
-  03-mission-cutscene 49,699 B; 04-docks-firefight 40,878 B);
-  docks fixed with Pier 9 floodlights. Retake again at the final
-  checkpoint (step 18) after Tier 3 visuals land.
+  probed. What is left is the final verification + submit (leader
+  job, not the build agent's).
+- **Screenshots:** 4 retaken at the final checkpoint (step 18) on
+  High 1280×720 (01-title 66,224 B; 02-night-chase 53,316 B;
+  03-mission-cutscene 65,154 B; 04-docks-firefight 44,647 B).
+  Staging fixes this step: driver inside the cabin, cutscene
+  camera north of Lin, docks gang + truck in frame, tag markers
+  hidden in shot mode.
 - **GitHub About** (website on make.fun + topic `makefun`) must be set
   before submit — bos/leader job, not the build agent's.
 - **`.makefun/freshness.json`** predates this session; leave it alone.
@@ -549,5 +597,8 @@ money path $5,550 after M6 → $5,450 death → $5,350 arrest).
   byte-identical output.
 - `node tools/fpsdiag.mjs` — FPS per preset, headed Chrome.
 - `node tools/screenshots.mjs` — retakes the 4 shots on High.
+- `node ~/muse-hq/results/J-20261121-081507/check-gta6-compliance.mjs`
+  — expect 11 PASS, 0 FAIL, 1 BELUM-BISA-DICEK (dossier, which
+  the scorer checks byte-for-byte).
 - `git ls-files` must contain no lockfiles, generated files or secrets
   before the final checkpoint.

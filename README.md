@@ -34,14 +34,16 @@ offline from static files.
 | --- | --- |
 | W A S D | Move / drive (throttle, steer) |
 | Mouse | Orbit camera (pointer lock); aim with right mouse |
-| Shift | Sprint |
+| Shift | Sprint; hold while aiming for slow-motion focus |
 | Space | Jump / handbrake in a car |
 | Left mouse | Punch / shoot |
 | 1 / 2 / 3 / 4 | Fists / Kobra 9 / Wasp SMG / Thunder shotgun |
 | R | Reload |
 | F | Enter or exit a car |
-| E | Save at the safehouse |
+| E | Save at the safehouse; tag an Orchid mark; open a shop |
 | M | Big map (click to set a waypoint) |
+| Tab | Stats screen |
+| F3 | FPS counter (with quality preset and render scale) |
 | Esc / P | Pause |
 
 ## Missions
@@ -53,9 +55,15 @@ offline from static files.
 5. **Low Tide** — night raid on Orchid Freight: six guards and a weapons truck.
 6. **Orchid Falls** — chase Viktor Raza to the east pier and finish him at sunrise.
 
-Plus a wanted system from 0 to 5 stars with police cars and foot cops.
-Coming next: 12 Orchid tags to collect, a respray shop, a gun shop, a
-police helicopter, and rain.
+Plus a wanted system from 0 to 5 stars with police cars, foot cops,
+roadblocks at 3+ stars, and the Rajawali police helicopter — which you
+can shoot down for a $500 bounty. Around the city: 12 Orchid tags to
+spray (+$50 each), Kilat Respray (repaint + full repair, $150), Bang
+Bang Arms (ammo, the Thunder 12, body armour), three radio stations
+with ten original songs, and a stats screen (Tab) tracking money,
+missions, kills, accuracy, and more. The render scale adapts to your
+machine, and holding Shift while aiming slows the world to line up
+the shot.
 
 ## Screenshots
 

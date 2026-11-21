@@ -827,7 +827,9 @@ function frame(now) {
   vehicles.draw();
   weapons.drawDecals();
   pickups.draw();
-  side.draw(); // Orchid tag markers (Tier 3)
+  // Orchid tag markers are gameplay hints — never in a staged
+  // screenshot scene, where the floating purple box reads as a glitch.
+  if (!shotName) side.draw();
   bigMap.drawBeam();
   missions.drawBeam();
   heli.draw(t);

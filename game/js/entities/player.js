@@ -196,11 +196,16 @@ export class Player {
       this.z = this.inCar.z;
       this.heading = this.inCar.heading;
       this.char.pose = 'drive';
-      // Seat the character in the driver's seat.
+      // Seat the character in the driver's seat. The seated head must
+      // sit inside the solid glasshouse (head joint 1.62 m, cabin roof
+      // ~1.36 m): char.y 0.55 put the head 0.8 m ABOVE the roof, so the
+      // driver read as standing on the roof in every chase shot.
+      // At -0.45 the head is at 1.17 m — inside the cabin, invisible
+      // from outside, as it should be with a solid cabin.
       const [sx, sz] = this.inCar.seatPos();
       this.char.x = sx;
       this.char.z = sz;
-      this.char.y = 0.55;
+      this.char.y = -0.45;
       this.char.heading = this.inCar.heading;
       this.char.speed = 0;
       this.updateCamera(dt);

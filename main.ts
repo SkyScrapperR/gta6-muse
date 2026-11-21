@@ -21,6 +21,11 @@
 // refuses to write it unless both builds are byte-identical, then reads
 // the written file back and verifies it matches — so a run can never
 // silently ship a non-deterministic dossier.
+//
+// Final checkpoint revision (step 18): the screenshot check also reads
+// each image's pixel size (JPEG SOF0/SOF2, PNG IHDR) and enforces the
+// gate's long side ≤ 1280 and short side ≥ 480 — a wrong-size
+// screenshot used to pass this program and fail only at the scorer.
 
 import {
   cpSync,
@@ -45,15 +50,17 @@ const outputDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 // directories totalling at most 48 MiB, with no path longer than 1000
 // bytes; game/index.html is a regular file of at most 1 MiB; screenshots/
 // holds 3 to 4 images of at most 256 KiB each, long side at most 1280 and
-// short side at least 480 pixels (the pixel size is a property of the
-// image bytes, checked by the scorer, not by this program); the dossier
-// text is capped at 160 KiB and the dossier itself at 1.5 MiB.
+// short side at least 480 pixels (the pixel size is read from the image
+// bytes by imageDimensions below, so a wrong-size screenshot fails here);
+// the dossier text is capped at 160 KiB and the dossier itself at 1.5 MiB.
 const GAME_MAX_FILES = 993;
 const GAME_MAX_BYTES = 50331648;
 const GAME_PATH_MAX_BYTES = 1000;
 const INDEX_MAX_BYTES = 1048576;
 const SHOT_MAX_BYTES = 262144;
 const SHOT_NAME = /^[A-Za-z0-9._-]{1,128}$/;
+const SHOT_MAX_LONG = 1280;
+const SHOT_MIN_SHORT = 480;
 
 // Mirror one directory tree into the output, creating the target first.
 function mirrorTree(sourceDir: string, targetDir: string): void {
@@ -108,9 +115,39 @@ function checkGameTree(gameDir: string): void {
   }
 }
 
+// Read an image's pixel size: JPEG via its SOF0/SOF2 marker (baseline
+// or progressive), PNG via IHDR. Throws on anything else — the gate
+// only ever sees JPEGs from this repo, but a wrong format should fail
+// here with a plain message, not at the scorer.
+function imageDimensions(path: string): { width: number; height: number } {
+  const buf = readFileSync(path);
+  // PNG: 8-byte signature, then IHDR with width/height at bytes 16/20.
+  if (buf.length >= 24 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+    return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+  }
+  // JPEG: SOI marker, then scan segments for SOF0 (0xC0) or SOF2 (0xC2).
+  if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) {
+    throw new Error(`not a JPEG or PNG: ${path}`);
+  }
+  let i = 2;
+  while (i < buf.length - 1) {
+    if (buf[i] !== 0xff) { i++; continue; }
+    const marker = buf[i + 1];
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { i += 2; continue; }
+    if (marker === 0xda) break; // SOS: scan data follows, no SOF after it
+    const len = buf.readUInt16BE(i + 2);
+    if (marker === 0xc0 || marker === 0xc2) {
+      return { width: buf.readUInt16BE(i + 7), height: buf.readUInt16BE(i + 5) };
+    }
+    i += 2 + len;
+  }
+  throw new Error(`no SOF marker in JPEG: ${path}`);
+}
+
 // Check the copied screenshots/: 3 to 4 files, each at most 256 KiB,
 // with a plain name (letters, digits, '.', '_' or '-', 1 to 128
-// characters, not starting with '.' or '-').
+// characters, not starting with '.' or '-'), long side at most 1280 px
+// and short side at least 480 px.
 function checkScreenshots(shotDir: string): void {
   if (!existsSync(shotDir)) throw new Error('screenshots/ is missing');
   const names = readdirSync(shotDir)
@@ -127,6 +164,15 @@ function checkScreenshots(shotDir: string): void {
     if (!st.isFile()) throw new Error(`screenshot is not a file: ${name}`);
     if (st.size > SHOT_MAX_BYTES) {
       throw new Error(`screenshot ${name} is ${st.size} bytes, cap is ${SHOT_MAX_BYTES}`);
+    }
+    const { width, height } = imageDimensions(join(shotDir, name));
+    const long = Math.max(width, height);
+    const short = Math.min(width, height);
+    if (long > SHOT_MAX_LONG) {
+      throw new Error(`screenshot ${name} is ${width}x${height}, long side over ${SHOT_MAX_LONG}`);
+    }
+    if (short < SHOT_MIN_SHORT) {
+      throw new Error(`screenshot ${name} is ${width}x${height}, short side under ${SHOT_MIN_SHORT}`);
     }
   }
 }

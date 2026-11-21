@@ -33,9 +33,11 @@ export function setupShot(name, w) {
     w.player.spawn(vx - 2, vz, vh);
     w.player.enterCar(v);
     // Seat Kai (the player does not update in shot mode, so seat him here).
+    // char.y -0.45: the seated head sits inside the cabin (see player.js)
+    // — 0.55 put him standing on the roof.
     const [sx, sz] = v.seatPos();
     w.player.char.x = sx; w.player.char.z = sz;
-    w.player.char.y = 0.55; w.player.char.heading = vh;
+    w.player.char.y = -0.45; w.player.char.heading = vh;
     w.player.char.pose = 'drive';
     w.police.addWanted(4);
     // Two patrols ahead as a roadblock, headlights on the Vesper.
@@ -48,10 +50,12 @@ export function setupShot(name, w) {
     w.game.state = 'shot';
   } else if (name === 'cutscene') {
     // Golden hour at Lin's Garage: Kai and Mama Lin, letterbox, portrait
-    // card, subtitle — the M1 reunion.
+    // card, subtitle — the M1 reunion. Kai stands WEST of Lin so the
+    // close-up camera goes north of her: with Kai east, the camera sat
+    // south and the garage wall filled the left half of the frame.
     w.setHour(17.5);
     const [lx, lz] = w.missions.sidewalkSpot('garage');
-    w.player.spawn(lx + 5, lz, Math.atan2(-5, 0));
+    w.player.spawn(lx - 5, lz, Math.atan2(5, 0));
     w.player.char.heading = w.player.heading;
     w.player.syncChar();
     w.game.state = 'cutscene';
@@ -68,13 +72,17 @@ export function setupShot(name, w) {
     w.setHour(22);
     w.rain.setTarget(1);
     const [fx, fz] = w.missions.sidewalkSpot('freight');
-    const gx = fx + 14, gz = fz - 10;
+    // The gang stands ~13 m from Kai so the figures read; the truck
+    // sits 5 m past them and 3 m to the side, in frame beside the gang
+    // instead of 10 m behind them (where it fell out of the shot).
+    const gx = fx + 6, gz = fz - 4;
     w.missions.gang = w.combatAI.spawnGang(gx, gz, 6);
     // Kai takes cover, aiming at the gang; the truck sits beyond them.
     const px = fx - 2, pz = fz + 6;
     const adx = gx - px, adz = gz - pz;
     const alen = Math.hypot(adx, adz) || 1;
-    const truck = w.vehicles.add('bison', gx + (adx / alen) * 10, gz + (adz / alen) * 10, Math.atan2(adx, adz) + Math.PI, [0.9, 0.55, 0.15]);
+    const ux = adx / alen, uz = adz / alen;
+    const truck = w.vehicles.add('bison', gx + ux * 5 - uz * 3, gz + uz * 5 + ux * 3, Math.atan2(adx, adz) + Math.PI, [0.9, 0.55, 0.15]);
     truck.damage(60); // smoking, about to go up
     w.player.spawn(px, pz, Math.atan2(adx, adz));
     w.player.giveWeapon('wasp', 64);
