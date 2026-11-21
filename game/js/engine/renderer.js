@@ -54,8 +54,18 @@ export class Renderer {
     this.shadowSize = 0; // 0 = shadows off
     this.postWanted = false; // true on Medium/High (bloom + ACES)
     this.postActive = false; // true this frame when HDR is really on
+    // Checkpoint 2 perf: shader detail switches, driven by the quality
+    // preset (see applyQuality in main.js). detail 0 skips the grime
+    // hash in the lit shader; clouds 0/1/2 picks the sky's noise octaves.
+    this.detail = 1;
+    this.clouds = 2;
     this.wet = 0; // rain wetness 0..1, from the RainSystem
     this.lights = null; // LightRegistry, set by main.js
+    // Checkpoint 2 perf: on Low the 12-light forward loop is skipped
+    // entirely (lightsOn false) — on this software rasteriser the loop
+    // costs more than the rest of the fragment shader combined, and
+    // the lamps still read via their emissive glow. Med/High keep it.
+    this.lightsOn = true;
     this.coneHeight = 60; // heli spotlight cone height, set by the heli
     this.batches = new Map();
     this.width = 0;
@@ -230,6 +240,7 @@ export class Renderer {
     // With the post chain the HDR value goes to the chain (ACES there);
     // without it the shader applies its own shoulder.
     setFloat(gl, this.lit.u.uTonemap, this.postActive ? 0 : 1);
+    setFloat(gl, this.lit.u.uDetail, this.detail);
     setFloat(gl, this.lit.u.uShadowOn, this.shadowSize > 0 ? 1 : 0);
     setVec2(gl, this.lit.u.uShadowTexel, this.shadowMap.texel, this.shadowMap.texel);
     if (this.shadowMap.depthTex) {
@@ -239,7 +250,9 @@ export class Renderer {
       gl.activeTexture(gl.TEXTURE0);
     }
     // Night point lights from the registry (0 by day — see lights.js).
-    if (this.lights && this.lights.count > 0) {
+    // On Low the loop is skipped (see lightsOn above): the uniform is
+    // set to 0 so the fragment shader breaks out on the first iteration.
+    if (this.lightsOn && this.lights && this.lights.count > 0) {
       setInt(gl, this.lit.u.uLightCount, this.lights.count);
       gl.uniform4fv(this.lit.u.uLightPos, this.lights.pos);
       gl.uniform4fv(this.lit.u.uLightCol, this.lights.col);
@@ -265,6 +278,7 @@ export class Renderer {
     setVec3(gl, p.uSunTint, palette.sunTint);
     setFloat(gl, p.uNight, palette.night);
     setFloat(gl, p.uStars, time);
+    setFloat(gl, p.uClouds, this.clouds);
     gl.bindVertexArray(this.skyVao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);

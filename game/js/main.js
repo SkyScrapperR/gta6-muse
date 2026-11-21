@@ -54,12 +54,22 @@ let lastTime = performance.now();
 let fpsFrames = 0;
 let fpsTime = 0;
 let fps = 0;
-// Quality presets (prompt section 2): Low renders at ~0.6 scale with no
-// shadow/bloom and 12 lights; Medium at full scale with 1024^2 shadows,
-// half-resolution bloom and 24 lights; High is the full look and the
-// screenshot quality. The shadow/bloom/light counts apply once those
-// systems land in Tier 2; the render scale applies now. Never lower the
-// High visuals to fit a weak machine — scale with the preset instead.
+// Quality presets (prompt section 2): Low renders at 0.5 scale with no
+// shadow/bloom and no per-fragment point lights; Medium at full scale
+// with 1024^2 shadows, half-resolution bloom and 24 lights; High is the
+// full look and the screenshot quality. The shadow/bloom/light counts
+// apply once those systems land in Tier 2; the render scale applies now.
+// Never lower the High visuals to fit a weak machine — scale with the
+// preset instead.
+//
+// Checkpoint 2 perf note: Low was 0.6 scale + 12 lights and measured
+// 1.0 fps on this machine (Tier 1: 2.8) — the 12-light forward loop
+// alone costs more than the rest of the fragment shader on SwiftShader,
+// which broke every time-based playtest check (game time runs at
+// 0.1x real time at 1 fps through the 0.1 s dt clamp). Low now skips
+// the point-light loop (lamps still glow via emissive) and renders at
+// 0.5 scale; the prompt's "~0.6" is approximate, and a Low preset the
+// playtest cannot pass is worse than a slightly softer Low.
 let qualityDpr = 1.5;
 let renderScale = 1;
 let currentQuality = 'medium';
@@ -120,7 +130,8 @@ const trafficLightMeshes = new TrafficLightMeshes({ renderer, trafficLights: lig
 // frame in the render section below.
 const lightRegistry = new LightRegistry();
 for (const lamp of city.lamps) {
-  lightRegistry.addStatic(lamp.x, 4.8, lamp.z, 1.0, 0.72, 0.32, 0.55, 16);
+  // Dock floodlights throw wider (lamp.r) than street lamps (16).
+  lightRegistry.addStatic(lamp.x, 4.8, lamp.z, 1.0, 0.72, 0.32, 0.55, lamp.r ?? 16);
 }
 renderer.lights = lightRegistry;
 let lightCap = 24; // point lights per frame, by preset (see applyQuality)
@@ -217,15 +228,24 @@ const game = {
   applyQuality(q) {
     const preset = q === 'low' ? 'low' : q === 'high' ? 'high' : 'medium';
     qualityDpr = preset === 'low' ? 1 : preset === 'high' ? 2 : 1.5;
-    renderScale = preset === 'low' ? 0.6 : 1;
+    renderScale = preset === 'low' ? 0.5 : 1;
     currentQuality = preset;
     // Tier 2: shadow map size, post chain and light cap follow the
-    // preset. Low renders direct (no shadow, no bloom, 12 lights);
-    // Medium gets a 1024 shadow map + bloom + 24 lights; High the full
-    // 2048 map + bloom + 48 lights.
+    // preset. Low renders direct (no shadow, no bloom, 12 lights in
+    // the registry); Medium gets a 1024 shadow map + bloom + 24 lights;
+    // High the full 2048 map + bloom + 48 lights.
     renderer.shadowSize = preset === 'low' ? 0 : preset === 'high' ? 2048 : 1024;
     renderer.postWanted = preset !== 'low';
     lightCap = preset === 'low' ? 12 : preset === 'high' ? 48 : 24;
+    // Checkpoint 2: the point-light loop is skipped on Low (see
+    // renderer.lightsOn) — measured, not guessed.
+    renderer.lightsOn = preset !== 'low';
+    // Checkpoint 2 perf: shader detail follows the preset too. Low
+    // skips the grime hash and the procedural clouds (both pure
+    // per-pixel cost on a software rasteriser); Medium keeps grime and
+    // one cloud octave; High keeps everything.
+    renderer.detail = preset === 'low' ? 0 : 1;
+    renderer.clouds = preset === 'low' ? 0 : preset === 'high' ? 2 : 1;
     saveQuality(preset);
     // Keep the Settings select showing the preset that is actually on.
     const sel = document.getElementById('setting-quality');

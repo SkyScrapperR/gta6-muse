@@ -6,14 +6,10 @@ prompt, 21 Nov 10:12) before continuing.
 
 ## Current step
 
-**Step 14 of 18: Tier 2 — DONE 21 Nov ~11:18 WITA** (commit 9015564; the
-earlier "~12:05" timestamp here was wrong, fixed 21 Nov ~11:40 by the
-continuation agent after re-running the probe). Steps 11–14
-landed (see below) and are verified by `tools/probe-step14.mjs`
-**15/15 PASS, 0 console errors** (re-run 21 Nov ~11:38, log
-`~/workspace/probe-step14-rerun.log`). Next: **Checkpoint 2 (step 15)** —
-full playtest on Low + FPS per preset + retake the 4 screenshots on
-High (visuals changed materially) + this log, then Tier 3 (16–18).
+**Step 15 of 18: Checkpoint 2 — DONE 21 Nov ~12:49 WITA** (commit
+pending; playtest re-run + FPS + screenshots below). Next: **Tier 3
+(step 16)** — roadblocks, heli shoot-down, full soundtrack +
+`MUSIC.md`, side content, stats screen.
 
 ## The main.ts contract (from the kit — step 1 revision)
 
@@ -298,32 +294,118 @@ Read from `~/workspace/gta6-kit/gta6-01-kit/`: `RULES.txt` (537 lines),
       the gun-batch read all need multi-second real waits. The
       probe's waits are annotated with this.
 
+## Step 15 (Checkpoint 2, this session)
+
+Playtest re-run from zero on Low + FPS per preset + 4 screenshots
+retaken on High. **Playtest: 26/26 PASS, 0 console errors, exit 0**
+(log `~/workspace/playtest-checkpoint2-run4.log`, 21 Nov ~12:45 WITA;
+money path $5,550 after M6 → $5,450 death → $5,350 arrest).
+
+- **FPS collapse found and fixed.** The first re-run was 18/26 with
+  Low at **1.0 fps** (Tier 1: 2.8). A control run of the Tier 1
+  commit `6f75e1b` on the same machine measured Low 2.6–3.0, proving
+  the regression was in the Tier 2 code, not the machine. Root
+  cause: the fragment shader. The 12-light forward loop alone costs
+  more than the rest of the fragment shader combined on SwiftShader
+  (a lights-off A/B: 1.00 → 1.50 fps; the Tier 1 fragment shader
+  swapped in: 1.00 → 2.25 fps). The 0.1 s `dt` clamp makes game
+  time run at ~0.1× real time at 1 fps, so every time-based check
+  (walk, wanted decay, Dex's 41 m walk) failed or starved.
+- **Fixes (measured, not guessed):**
+  - Traffic-light lamps: spheres (6×8, 80 tris) → flat boxes
+    (12 tris); pole cylinder → square post. TL total 133,584 →
+    ~29,040 tris/frame. Tree canopies 6×8 → 4×6 (32,208 → 16,104).
+  - `uShadowOn` (vertex): `vLightPos` computed only when shadows
+    are on. `uDetail` (fragment): grime hash gated behind
+    `uDetail > 0.5`. `uClouds` (sky): 0 = off, 1 = one octave,
+    2 = two (exact Tier 2 result). Light loop: exact early distance
+    cull (`if (d2 >= r*r) continue`).
+  - **Low skips the point-light loop entirely** (`renderer.lightsOn`
+    false; lamps still glow via emissive) and renders at **0.5
+    scale** (was 0.6): the loop alone cost ~0.45 s/frame on this
+    machine. Medium keeps grime + 1 cloud octave + 24 lights, High
+    keeps everything (48 lights, 2 octaves). The prompt's "~0.6"
+    is approximate; a Low the playtest cannot pass is worse than a
+    slightly softer Low. High visuals were NOT lowered.
+  - Result: **Low 2.8 fps** (fpsdiag samples 4, 4, 2, 2, 2; backing
+    640×360) — back to Tier 1 level. Medium 0.6, High 0.6 on this
+    VM (Tier 2 shadow + bloom + light loop at full resolution;
+    prompt: High may be slow, Medium "playable" is a build-machine
+    target — SwiftShader is ~100× slower than a real GPU here).
+- **Playtest fixes were test-side, not game-side:**
+  - M4 Dex pickup poll 20 → 40 (60 s wall): Dex needs ~10 game-s
+    to walk 41 m; at ~2 fps that is ~50 wall-s.
+  - M4 bank wait: the fixed 4 s wait after setting
+    `stageState.waited = 14.5` ended at 14.9 in-game (fps ~1 in
+    the wanted-3 chase), and `enterStage()` replaces `stageState`,
+    so setting `waited` before stage 3 starts is wiped. Now the
+    test polls for stage 3, sets `waited`, then polls for stage 4.
+  - M2 steal: clear wanted after M1 first — the real M1 drive can
+    leave Kai at 1 star (a cop spots him), so the steal check now
+    measures only the steal's own +1 star.
+  - Big-map waypoint: fixed 1 s waits replaced by polls for
+    `bigMap.open` / `waypoint` (verified the feature works with
+    `tools/probe-bigmap.mjs`: M opens, click sets waypoint (0,0)).
+  - Runs 2–3 isolated the failures: walk + decay fixed by the FPS
+    recovery; M4/M6/continue/death/arrest were cascades of the
+    missing $800 M4 reward; M2 was the flaky wanted-after-M1.
+- **Screenshots retaken on High 1280×720** (all ≤256 KiB):
+  01-title 65,988 B; 02-night-chase 54,078 B;
+  03-mission-cutscene 49,699 B; 04-docks-firefight 40,878 B.
+  Critical review: the chase shot was verified correct with
+  `tools/probe-chase.mjs` (Kai IS seated, pose 'drive', y 0.55 —
+  the "standing on the roof" reading was the front camera + the
+  headlights below him). The docks shot was genuinely broken —
+  pitch black, Kai a silhouette — because the freight yard sits
+  ~70 m from the nearest street lamp (radius 16 m). Fixed with
+  four floodlight poles around the yard
+  (`city.js` `placeStreetFurniture`, offsets ±26/±20 clear of both
+  warehouses and between the container rows) with a wider throw
+  (`lamp.r = 30`, `main.js` uses `lamp.r ?? 16`): Kai, the guards
+  and the Bison truck now read in the frame.
+- **Step 14 re-verified** in this session before the checkpoint:
+  `tools/probe-step14.mjs` 15/15 PASS; `main.ts` deterministic
+  2× (dossier 382,682 bytes, sha256
+  `e3f93f4495a1eaee67c28daac509abc5373f1938b338bf46faf5b41f9637082d`);
+  DEVLOG step-14 timestamp corrected (12:05 → 11:18 WITA).
+- **Perf probes kept:** `tools/steadyfps.mjs` (8 s rAF count),
+  `tools/fpslow.mjs`, `tools/drawstats.mjs` (draw calls +
+  triangles), `tools/probe-bigmap.mjs`, `tools/probe-chase.mjs`.
+  Scratch probes (batchdump, cpuprofile, lightcount,
+  profile-frame, profile-nolights, tinyviewport) deleted.
+
 ## Open bugs / known gaps
 
-- **Playtest: 26/26 PASS** (21 Nov ~11:05 WITA). The 8 failures from
-  the 10:11 run (wanted decay, M4, M6, continue, death, arrest,
-  resume) are all fixed: M6/continue/death/arrest were cascades of
-  the M4 failure (missing $800 reward broke the money expectations);
-  resume was the fixed-wait race. Money path verified end to end:
-  $5,550 after M6 → $5,450 after death → $5,350 after arrest.
-- **FPS on this machine (measured 21 Nov, `tools/fpsdiag.mjs`, title
-  screen, headed Chrome, SwiftShader, no GPU): Low mean 2.8 fps
-  (samples 4, 2, 3, 3, 2; backing 768×432), Medium mean 2.2 fps
-  (2, 2, 2, 2, 3; 1280×720), High mean 1.6 fps (2, 2, 1, 2, 1;
-  1280×720). Low is ~75% faster than High (render scale 0.6 works),
-  but everything is single digits: the VM's software rasterizer is
-  the bottleneck. The prompt's Low 30+ fps target is NOT achievable
-  on this machine — that is a machine limit, stated plainly. On a
-  real GPU the same presets will run far faster; High is the
-  screenshot quality and does not need real-time FPS.
-- **Tier 2 done (steps 11–14).** The full playtest has NOT been
-  re-run since step 10 — that is Checkpoint 2 (step 15), next.
+- **Playtest: 26/26 PASS, 0 console errors** (Checkpoint 2, 21 Nov
+  ~12:45 WITA, log `~/workspace/playtest-checkpoint2-run4.log`).
+  Money path verified end to end: $5,550 after M6 → $5,450 after
+  death → $5,350 after arrest. See the Step 15 section for the
+  FPS-collapse fix and the test-side fixes (M4 polls, M2 wanted
+  clear, big-map polling).
+- **FPS on this machine (measured 21 Nov ~12:46, `tools/fpsdiag.mjs`,
+  title screen, headed Chrome, SwiftShader, no GPU): Low mean 2.8 fps
+  (samples 4, 4, 2, 2, 2; backing 640×360), Medium mean 0.6 fps
+  (1, 1, 1, 0, 0; 1280×720), High mean 0.6 fps (0, 0, 1, 1, 1;
+  1280×720). Low recovered to Tier 1 level after the Checkpoint 2
+  shader fixes; Medium/High carry the full Tier 2 look (shadow map
+  + bloom + 24/48-light loop at full resolution) and are slow on
+  SwiftShader by design — the prompt says High may be slow and
+  never to lower High visuals for a weak machine. The prompt's Low
+  30+ fps target is NOT achievable on this machine — that is a
+  machine limit, stated plainly. On a real GPU the same presets
+  will run far faster; High is the screenshot quality and does not
+  need real-time FPS.
+- **Checkpoint 2 done (step 15).** Next: Tier 3 (steps 16–18).
 - **Tier 3 missing:** roadblocks, shoot-down heli, full soundtrack
-  (6 more radio songs + Viktor theme + credits) + MUSIC.md, side
+  (7 more radio songs + Viktor theme + credits) + MUSIC.md, side
   content (12 Orchid tags, respray, gun shop, stats screen),
-  adaptive resolution, slow motion, hit markers, extra props.
-- **Screenshots:** 4 exist and are Tier 1 era; retake at Checkpoint 2
-  (Tier 2 changed the visuals materially — night lights, rain, heli).
+  adaptive resolution, slow motion, hit markers (exist in HUD —
+  verify), extra props.
+- **Screenshots:** 4 retaken at Checkpoint 2 on High 1280×720
+  (01-title 65,988 B; 02-night-chase 54,078 B;
+  03-mission-cutscene 49,699 B; 04-docks-firefight 40,878 B);
+  docks fixed with Pier 9 floodlights. Retake again at the final
+  checkpoint (step 18) after Tier 3 visuals land.
 - **GitHub About** (website on make.fun + topic `makefun`) must be set
   before submit — bos/leader job, not the build agent's.
 - **`.makefun/freshness.json`** predates this session; leave it alone.
@@ -334,7 +416,8 @@ Read from `~/workspace/gta6-kit/gta6-01-kit/`: `RULES.txt` (537 lines),
 ## How to verify (for the next session)
 
 - `node tools/playtest.mjs` (headed Chrome, Xvfb :99, Low preset) —
-  expect 25/25 PASS and `PLAYTEST ALL PASS`, exit 0.
+  expect 26/26 PASS and `PLAYTEST ALL PASS`, exit 0 (~7 min; the
+  M4 Dex poll and the wanted-decay section are the long poles).
 - `node tools/probe-step14.mjs` (headed Chrome, Xvfb :99) — expect
   15/15 PASS, 0 errors (~80 s; the waits are long because game time
   runs ~5× slower than real time at ~2 fps in SwiftShader).

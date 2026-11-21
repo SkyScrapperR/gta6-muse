@@ -142,6 +142,11 @@ try {
   s = await S();
   check('M1 completes', s.completed.includes('m1') && s.money === 450, JSON.stringify(s));
   // M2: steal the Vesper, drive it to the garage.
+  // Clear any wanted stars left over from the M1 drive first: the
+  // drive is real and a cop can spot Kai on the way (run 2 of
+  // Checkpoint 2 finished M1 at 1 star), so the steal check below
+  // measures only the steal's own +1 star, not M1's luck.
+  await page.evaluate(() => { window.__selara.police.clearWanted(); });
   await page.evaluate(() => { window.__selara.missions.nextMissionT = 0.1; });
   await page.waitForTimeout(2500);
   const vesperOk = await page.evaluate(() => {
@@ -319,7 +324,7 @@ try {
     s.player.x = dx; s.player.z = dz;
   });
   let m4stage = 0;
-  for (let i = 0; i < 7 && m4stage < 1; i++) {
+  for (let i = 0; i < 10 && m4stage < 1; i++) {
     await page.waitForTimeout(1500);
     m4stage = await page.evaluate(() => window.__selara.missions.stage);
   }
@@ -354,8 +359,12 @@ try {
       await page.waitForTimeout(800);
     }
   }
-  // Dex walks ~41 m to the car at 4.5 m/s: about 10 s, poll to 30 s.
-  for (let i = 0; i < 20 && m4stage < 2; i++) {
+  // Dex walks ~41 m to the car at 4.5 m/s: about 10 s of GAME time.
+  // Game time runs at ~0.2x real time on this machine (~2 fps through
+  // the 0.1 s dt clamp), so 10 game-seconds is ~50 wall-seconds: poll
+  // to 60 s. The assertion is unchanged (Dex boards, stage reaches 2);
+  // only the wall-clock timeout follows the measured frame rate.
+  for (let i = 0; i < 40 && m4stage < 2; i++) {
     await page.waitForTimeout(1500);
     m4stage = await page.evaluate(() => window.__selara.missions.stage);
   }
@@ -368,8 +377,21 @@ try {
     s.player.x = bx; s.player.z = bz;
   });
   await page.waitForTimeout(2000);
+  // Wait for the bank-arrival stage first: enterStage() REPLACES
+  // stageState, so setting waited before stage 3 starts would be wiped
+  // by its enter() (that race is what stalled M4 in Checkpoint 2 run 2).
+  for (let i = 0; i < 10 && m4stage < 3; i++) {
+    await page.waitForTimeout(1500);
+    m4stage = await page.evaluate(() => window.__selara.missions.stage);
+  }
   await page.evaluate(() => { window.__selara.missions.stageState.waited = 14.5; });
-  await page.waitForTimeout(4000);
+  // The wait stage needs 0.5 more game-seconds; at ~1 fps in-game that
+  // is ~5 wall-seconds, so poll for the stage to advance instead of a
+  // fixed 4 s wait (the fixed wait ended at 14.9 in run 2).
+  for (let i = 0; i < 20 && m4stage < 4; i++) {
+    await page.waitForTimeout(1500);
+    m4stage = await page.evaluate(() => window.__selara.missions.stage);
+  }
   await page.evaluate(() => { window.__selara.police.clearWanted(); });
   await page.waitForTimeout(2000);
   await page.evaluate(() => {
@@ -459,12 +481,23 @@ try {
   await page.waitForTimeout(5000);
   s = await S();
   check('arrest respawns at Police HQ', s.wanted === 0 && s.money === 5350, JSON.stringify(s));
-  // Big map waypoint.
+  // Big map waypoint. Poll for the state changes: at ~2 fps (and slower
+  // right after the arrest banner/stinger) a fixed 1 s wait can land
+  // before the frame that reads the keypress or the click — the feature
+  // itself is verified by tools/probe-bigmap.mjs (M opens, click sets
+  // waypoint (0,0)); this is the same polling pattern as pause/resume.
   await page.keyboard.press('KeyM');
-  await page.waitForTimeout(1000);
+  let mapOpen = false;
+  for (let i = 0; i < 12 && !mapOpen; i++) {
+    await page.waitForTimeout(500);
+    mapOpen = await page.evaluate(() => window.__selara.bigMap.open);
+  }
   await page.mouse.click(640, 360);
-  await page.waitForTimeout(1000);
-  const wp = await page.evaluate(() => window.__selara.bigMap.waypoint);
+  let wp = null;
+  for (let i = 0; i < 12 && !wp; i++) {
+    await page.waitForTimeout(500);
+    wp = await page.evaluate(() => window.__selara.bigMap.waypoint);
+  }
   check('big-map waypoint set', !!wp, JSON.stringify(wp));
   await page.keyboard.press('KeyM');
   await page.waitForTimeout(800);

@@ -21,6 +21,7 @@ layout(location = 8) in vec4 aInstanceColor;
 uniform mat4 uProj;
 uniform mat4 uView;
 uniform mat4 uLightVP;
+uniform float uShadowOn; // 1 when the shadow map is active (Med/High)
 out vec3 vNormal;
 out vec3 vColor;
 out vec3 vEmissive;
@@ -37,7 +38,11 @@ void main() {
   vEmissive = aEmissive * aInstanceColor.a;
   vec4 view = uView * world;
   vFogDepth = -view.z;
-  vLightPos = uLightVP * world;
+  // The light-space position is only read by the shadow test in the
+  // fragment shader; on Low (no shadow map) skip the matrix multiply —
+  // it is a free 16 mults per vertex otherwise (Checkpoint 2 perf).
+  if (uShadowOn > 0.5) vLightPos = uLightVP * world;
+  else vLightPos = vec4(0.0);
   gl_Position = uProj * view;
 }`;
 
@@ -59,6 +64,7 @@ uniform float uNight;
 uniform vec3 uCamPos;
 uniform float uWet;
 uniform float uTonemap;
+uniform float uDetail; // 0 on Low: skip the grime hash (Checkpoint 2 perf)
 // Directional shadow map (Tier 2).
 uniform sampler2D uShadowMap;
 uniform float uShadowOn;
@@ -98,13 +104,16 @@ void main() {
   vec3 light = hemi + uSunColor * sunAmount * shadow;
   vec3 col = vColor * light;
   // Night point lights: inverse-square falloff, each clamped so one
-  // lamp cannot blow out the street.
+  // lamp cannot blow out the street. The range check first: most
+  // fragments are outside most lamps' radii, and skipping the
+  // normalise + colour add there is exact (attenuation would be 0).
   for (int i = 0; i < 48; i++) {
     if (i >= uLightCount) break;
     vec3 toL = uLightPos[i].xyz - vWorld;
     float d2 = dot(toL, toL);
     float r = uLightPos[i].w;
-    float att = clamp(1.0 - d2 / (r * r), 0.0, 1.0);
+    if (d2 >= r * r) continue;
+    float att = 1.0 - d2 / (r * r);
     att *= att;
     float nd = max(dot(n, toL * inversesqrt(max(d2, 0.0001))), 0.0);
     col += vColor * uLightCol[i].rgb * (uLightCol[i].a * att * nd);
@@ -113,10 +122,16 @@ void main() {
   col += vEmissive * (0.25 + 0.95 * uNight);
   // Surface detail: a faint world-space grime, stronger on up-facing
   // surfaces (asphalt, concrete), so flat colours stop looking plastic.
-  float g1 = hash13(floor(vWorld * 2.0));
-  float g2 = hash13(floor(vWorld * 6.0 + 17.0));
-  float grime = mix(1.0, 0.93 + 0.14 * g1 * g2, step(0.6, n.y));
-  col *= grime;
+  // Surface detail: a faint world-space grime, stronger on up-facing
+  // surfaces (asphalt, concrete), so flat colours stop looking plastic.
+  // Off on Low (uDetail 0): two hashes per fragment is the most
+  // expensive thing in this shader on a software rasteriser.
+  if (uDetail > 0.5) {
+    float g1 = hash13(floor(vWorld * 2.0));
+    float g2 = hash13(floor(vWorld * 6.0 + 17.0));
+    float grime = mix(1.0, 0.93 + 0.14 * g1 * g2, step(0.6, n.y));
+    col *= grime;
+  }
   // Wet roads (Tier 2): when it rains, up-facing surfaces darken and
   // pick up a sky sheen plus a sun glint.
   if (uWet > 0.01 && n.y > 0.7) {
@@ -162,6 +177,7 @@ uniform vec3 uHorizon;
 uniform vec3 uSunTint;
 uniform float uNight;
 uniform float uStars;
+uniform float uClouds; // 0 Low (off), 1 Medium (1 octave), 2 High (2 octaves)
 out vec4 fragColor;
 float hash13(vec3 p) {
   p = fract(p * 0.1031);
@@ -194,12 +210,13 @@ void main() {
   col += uSunTint * (pow(sunDot, 220.0) * 1.4 + pow(sunDot, 10.0) * 0.30);
   // Procedural clouds (Tier 2): two octaves of value noise projected on
   // the sky dome, drifting slowly with time, lit warm near the sun and
-  // fading out at night.
-  if (ray.y > 0.02) {
+  // fading out at night. Off on Low (two value-noise octaves per sky
+  // pixel is pure cost on a software rasteriser); one octave on Medium.
+  if (uClouds > 0.5 && ray.y > 0.02) {
     vec2 cuv = ray.xz / max(ray.y, 0.08);
     float t = uStars * 0.004;
-    float cl = vnoise(cuv * 1.4 + vec2(t, t * 0.6)) * 0.65
-      + vnoise(cuv * 3.1 - vec2(t * 1.7, t)) * 0.35;
+    float cl = vnoise(cuv * 1.4 + vec2(t, t * 0.6));
+    if (uClouds > 1.5) cl = cl * 0.65 + vnoise(cuv * 3.1 - vec2(t * 1.7, t)) * 0.35;
     float cmask = smoothstep(0.56, 0.78, cl) * smoothstep(0.02, 0.18, ray.y);
     vec3 cloudCol = mix(vec3(0.85, 0.86, 0.9), uSunTint * 1.2 + vec3(0.35), clamp(sunDot * 1.4, 0.0, 1.0));
     col = mix(col, cloudCol, cmask * 0.38 * (1.0 - uNight * 0.85));

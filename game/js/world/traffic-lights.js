@@ -10,7 +10,15 @@
 // A lamp that is ON glows at emissive 1.6; OFF lamps sit at 0.12, so a
 // red light at night is unmistakable and the green reads from a block
 // away.
-import { box, cylinder, sphere, emptyGeometry } from '../engine/mesh.js';
+//
+// Perf note (Checkpoint 2): the lamps were 6x8 spheres (80 tris each)
+// and the pole a 6-sided cylinder — 484 heads x 5 parts = ~134k
+// triangles every frame, which halved the frame rate on this weak
+// machine (Low 2.8 -> 1.0 fps) and broke the time-based playtest
+// checks. The lamps are now flat boxes (12 tris) and the pole a square
+// post (12 tris): same silhouette and glow at street distance, ~23k
+// triangles total for all 484 heads.
+import { box, emptyGeometry } from '../engine/mesh.js';
 import { mat4TRS } from '../core/math.js';
 import { GRID, nodeId, nodePos } from './roads.js';
 
@@ -30,20 +38,23 @@ export class TrafficLightMeshes {
   constructor(w) {
     this.w = w;
     const r = w.renderer;
-    // Pole: a slim dark post, 4.5 m tall.
+    // Pole: a slim dark post, 4.5 m tall (square section — a cylinder
+    // costs twice the triangles for no visible difference at this size).
     const poleGeo = emptyGeometry();
-    cylinder(poleGeo, 0, 2.25, 0, 0.09, 0.13, 4.5, 6, [0.16, 0.16, 0.18]);
+    box(poleGeo, 0, 2.25, 0, 0.2, 4.5, 0.2, [0.16, 0.16, 0.18]);
     // Housing: a dark box at the top of the pole; the lamps sit on its
     // +z face (local space — the instance rotation aims it).
     const housingGeo = emptyGeometry();
     box(housingGeo, 0, 4.6, 0, 0.5, 1.15, 0.42, [0.1, 0.1, 0.11]);
-    // Lamp spheres on the housing face (local +z, proud of the face).
+    // Lamp lenses on the housing face (local +z, proud of the face):
+    // flat boxes, 12 tris each — a sphere here is invisible extra cost
+    // at street distance, the emissive glow carries the colour.
     const redGeo = emptyGeometry();
-    sphere(redGeo, 0, 4.95, 0.27, 0.15, 6, 8, [0.3, 0.02, 0.02], [1, 0.08, 0.08]);
+    box(redGeo, 0, 4.95, 0.27, 0.28, 0.28, 0.08, [0.3, 0.02, 0.02], [1, 0.08, 0.08]);
     const yellowGeo = emptyGeometry();
-    sphere(yellowGeo, 0, 4.6, 0.27, 0.15, 6, 8, [0.3, 0.2, 0.02], [1, 0.7, 0.1]);
+    box(yellowGeo, 0, 4.6, 0.27, 0.28, 0.28, 0.08, [0.3, 0.2, 0.02], [1, 0.7, 0.1]);
     const greenGeo = emptyGeometry();
-    sphere(greenGeo, 0, 4.25, 0.27, 0.15, 6, 8, [0.02, 0.3, 0.05], [0.1, 1, 0.2]);
+    box(greenGeo, 0, 4.25, 0.27, 0.28, 0.28, 0.08, [0.02, 0.3, 0.05], [0.1, 1, 0.2]);
 
     this.heads = [];
     for (let iz = 0; iz <= GRID; iz++) {

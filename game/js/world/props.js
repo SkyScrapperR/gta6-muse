@@ -19,9 +19,11 @@ export function lampGeometry() {
 export function leafTreeGeometry() {
   const g = emptyGeometry();
   cylinder(g, 0, 1.4, 0, 0.22, 0.32, 2.8, 6, [0.35, 0.25, 0.16]);
-  sphere(g, 0, 3.6, 0, 1.7, 6, 8, [0.20, 0.45, 0.22]);
-  sphere(g, 0.9, 3.0, 0.4, 1.1, 6, 8, [0.25, 0.52, 0.25]);
-  sphere(g, -0.8, 3.1, -0.3, 1.0, 6, 8, [0.18, 0.42, 0.20]);
+  // Canopy blobs at 4x6 segments (36 tris each, was 80): a tree reads
+  // by its silhouette, not by sphere smoothness — Checkpoint 2 perf.
+  sphere(g, 0, 3.6, 0, 1.7, 4, 6, [0.20, 0.45, 0.22]);
+  sphere(g, 0.9, 3.0, 0.4, 1.1, 4, 6, [0.25, 0.52, 0.25]);
+  sphere(g, -0.8, 3.1, -0.3, 1.0, 4, 6, [0.18, 0.42, 0.20]);
   return g;
 }
 

@@ -301,6 +301,19 @@ export class City {
         }
       }
     }
+    // Pier 9 floodlights: the freight yard sits beyond the last street,
+    // so no intersection lamp reaches it — at night the docks were pitch
+    // black (the M6 firefight screenshot showed Kai as a silhouette).
+    // Four poles around the yard put the fight in pools of light; the
+    // offsets clear both warehouses (half-widths 22 m) and sit between
+    // the container rows. They also light the docks in normal play.
+    // Floodlights throw wider than street lamps (radius 30 vs 16).
+    const fr = this.landmarks.freight;
+    if (fr) {
+      for (const [ox, oz] of [[-26, 20], [26, 20], [-26, -20], [26, -20]]) {
+        this.lamps.push({ x: fr.x + ox, z: fr.z + oz, r: 30 });
+      }
+    }
   }
 
   // Player start: the ferry pier on the south beach.
