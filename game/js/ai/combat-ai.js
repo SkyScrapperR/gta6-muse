@@ -30,6 +30,8 @@ export class CombatAI {
         speed: 0,
         faction: 'gang',
         health: opts.health ?? 50,
+        // The gun model in the right hand (Tier 2).
+        weapon: opts.weapon ?? 'kobra',
       });
       const m = {
         c, char: c,
@@ -38,6 +40,7 @@ export class CombatAI {
         coverX: ox, coverZ: oz,
         burstLeft: 0, aimT: 0, strafeDir: this.rng() < 0.5 ? 1 : -1,
         fireT: 0,
+        weapon: opts.weapon ?? 'kobra',
       };
       this.members.push(m);
       spawned.push(m);

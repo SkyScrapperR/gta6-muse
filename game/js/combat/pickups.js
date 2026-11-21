@@ -6,6 +6,10 @@ const PICKUP_DEFS = {
   health: { color: [0.9, 0.15, 0.15], emissive: [0.4, 0.05, 0.05], size: 0.5 },
   cash: { color: [0.95, 0.8, 0.2], emissive: [0.4, 0.3, 0.05], size: 0.4 },
   ammo: { color: [0.85, 0.85, 0.85], emissive: [0.2, 0.2, 0.2], size: 0.4 },
+  // Tier 2: a weapon pickup (the Thunder shotgun in M5). A long dark
+  // crate with a purple glow, so it reads as something special. For
+  // this kind `amount` is the weapon key ('thunder'), not a number.
+  weapon: { color: [0.35, 0.25, 0.55], emissive: [0.35, 0.15, 0.7], size: 0.7 },
 };
 
 export class PickupSystem {

@@ -22,9 +22,11 @@ export function setupShot(name, w) {
     }
     w.game.state = 'shot';
   } else if (name === 'chase') {
-    // Night, four stars, a yellow Vesper tearing downtown with Garuda
-    // patrols on its tail. (Rain and the helicopter arrive in Tier 2.)
+    // Night, rain, four stars, a yellow Vesper tearing downtown with
+    // Garuda patrols on its tail — and Rajawali overhead (it spawns
+    // from the 4-star wanted level).
     w.setHour(22);
+    w.rain.setTarget(1);
     const l = w.city.landmark('bank');
     const [vx, vz, vh] = w.missions.roadSpot(l.x, l.z, 0);
     const v = w.vehicles.add('vesper', vx, vz, vh, [0.95, 0.8, 0.1]);
@@ -60,10 +62,11 @@ export function setupShot(name, w) {
     );
     s.cutscene = true;
   } else if (name === 'docks') {
-    // Dusk at Orchid Freight: Kai aiming over his shoulder, gang behind
-    // the containers, the Bison truck burning beyond them. (A true night
-    // version with floodlights comes in Tier 2.)
-    w.setHour(18.5);
+    // Night at Orchid Freight, in the rain: Kai aiming over his
+    // shoulder, gang behind the containers, the Bison truck burning
+    // beyond them, lamp floodlights and window glow cutting the dark.
+    w.setHour(22);
+    w.rain.setTarget(1);
     const [fx, fz] = w.missions.sidewalkSpot('freight');
     const gx = fx + 14, gz = fz - 10;
     w.missions.gang = w.combatAI.spawnGang(gx, gz, 6);

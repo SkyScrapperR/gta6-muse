@@ -423,5 +423,6 @@ export class Player {
     this.char.y = this.y;
     this.char.heading = this.heading;
     this.char.speed = this.speed;
+    this.char.weapon = this.weapon;
   }
 }

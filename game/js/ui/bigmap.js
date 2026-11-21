@@ -25,6 +25,7 @@ export class BigMap {
   setWaypoint(x, z) {
     this.waypoint = { x, z };
     this.minimap.waypoint = this.waypoint;
+    this.minimap.setRouteTo(x, z);
     const m = mat4TRS(x, 60, z, 0, 0, 0, 1, 1, 1);
     this.beamMatrices.set(m);
   }
@@ -32,6 +33,7 @@ export class BigMap {
   clearWaypoint() {
     this.waypoint = null;
     this.minimap.waypoint = null;
+    this.minimap.clearRoute();
   }
 
   // Draw the full map over the 2D canvas. Returns true when open.

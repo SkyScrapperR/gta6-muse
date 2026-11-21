@@ -105,6 +105,7 @@ export class MissionSystem {
   clearTarget() {
     this.marker = null;
     this.w.minimap.markers = [];
+    this.w.minimap.clearRoute();
   }
 
   startMission(i) {
@@ -132,6 +133,8 @@ export class MissionSystem {
     if (s.target) {
       const [x, z] = s.target(this);
       this.setTarget(x, z, s.radius ?? 10);
+      // GPS (Tier 2): route the minimap to the objective.
+      this.w.minimap.setRouteTo(x, z);
     } else {
       this.clearTarget();
     }
@@ -163,6 +166,8 @@ export class MissionSystem {
     }
     this.w.notifications.success(`Mission complete: ${m.name} — ${m.rewardText ?? ''}`);
     this.w.sfx.sting();
+    this.w.music?.stinger('passed');
+    if (m.onComplete) m.onComplete(this);
     this.w.save.save({ missions: this.completedIds });
     // The next mission starts after a breath.
     if (this.current + 1 < MISSIONS.length) {
@@ -182,6 +187,7 @@ export class MissionSystem {
     this.w.hud.objective = '';
     this.w.hud.objectiveSub = 'Press Enter to retry';
     this.w.hud.progress = null;
+    this.w.music?.stinger('failed');
   }
 
   retry() {
@@ -510,6 +516,13 @@ const MISSIONS = [
     ],
     reward: { money: 1200 },
     rewardText: '+$1,200',
+    // Tier 2: the Thunder shotgun unlock — a weapon pickup waits at
+    // Lin's Garage after the docks job. Lin stashed it for Kai.
+    onComplete(m) {
+      const [gx, gz] = m.sidewalkSpot('garage');
+      m.w.pickups.add('weapon', gx, gz, 'thunder');
+      m.w.notifications.info('Lin left something for you at the garage');
+    },
   },
   {
     id: 'm6', name: 'Orchid Falls',
@@ -550,6 +563,7 @@ const MISSIONS = [
           m.viktor = m.w.charSystem.add({
             x: v.x + 3, z: v.z + 3, heading: Math.atan2(m.w.player.x - v.x, m.w.player.z - v.z),
             outfit: OUTFITS.viktor, pose: 'idle', faction: 'gang', health: 200,
+            weapon: 'wasp', // the boss carries his SMG in hand (Tier 2)
           });
           const boss = { c: m.viktor, char: m.viktor, health: 200, state: 'cover', stateT: 0.5, coverX: v.x, coverZ: v.z, burstLeft: 0, aimT: 0, strafeDir: 1, fireT: 0, boss: true, weapon: 'wasp' };
           m.w.combatAI.members.push(boss);

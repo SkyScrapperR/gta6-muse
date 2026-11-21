@@ -24,6 +24,7 @@ export class PoliceSystem {
     this.footCops = []; // {c, punchT}
     this.dropT = 0;
     this.onArrest = null;
+    this.heli = null; // Rajawali (Tier 2), set by main.js
   }
 
   addWanted(n) {
@@ -226,6 +227,13 @@ export class PoliceSystem {
         const fc = this.footCops[i];
         if (Math.hypot(p.x - fc.c.x, p.z - fc.c.z) > 100) this.removeFootCop(i);
       }
+    }
+    // Rajawali (Tier 2): the helicopter joins at 3+ stars and leaves
+    // when the heat is gone. Its own update (follow, spotlight, fire)
+    // runs from main.js.
+    if (this.heli) {
+      if (this.wanted >= 3 && !this.heli.active) this.heli.spawn(p.x, p.z);
+      else if (this.wanted === 0 && this.heli.active && !this.heli.leaving) this.heli.despawn();
     }
   }
 }

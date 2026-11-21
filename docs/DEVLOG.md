@@ -6,13 +6,11 @@ prompt, 21 Nov 10:12) before continuing.
 
 ## Current step
 
-**Checkpoint 1 (step 10 of 18): Tier 1 verification — DONE 21 Nov ~11:05
-WITA.** The full playtest (`tools/playtest.mjs`, 26 checks) passes
-**26/26, `PLAYTEST ALL PASS`, exit 0** (log
-`~/workspace/playtest-tier1-run2.log`). Before these fixes the run was
-17 PASS / 8 FAIL (21 Nov ~10:11 WITA). `node main.ts` verified twice,
-exit 0, byte-identical. FPS per preset measured (see below). The game
-is now submittable. Tier 2 (steps 11–14) is next.
+**Step 14 of 18: Tier 2 — DONE 21 Nov ~12:05 WITA.** Steps 11–14
+landed (see below) and are verified by `tools/probe-step14.mjs`
+**15/15 PASS, 0 console errors**. Next: **Checkpoint 2 (step 15)** —
+full playtest on Low + FPS per preset + retake the 4 screenshots on
+High (visuals changed materially) + this log, then Tier 3 (16–18).
 
 ## The main.ts contract (from the kit — step 1 revision)
 
@@ -138,30 +136,45 @@ Read from `~/workspace/gta6-kit/gta6-01-kit/`: `RULES.txt` (537 lines),
 - `game/js/core/` — `input.js` (keyboard/mouse/pointer lock, edge
   detection that never loses a tap between frames), `math.js`.
 - `game/js/engine/` — `gl.js`, `renderer.js`, `shaders.js`, `mesh.js`,
-  `frustum.js`, `sky.js` (time-of-day dome). `post.js` / `shadows.js`
-  do NOT exist yet (Tier 2).
+  `frustum.js`, `sky.js` (time-of-day dome), `post.js` (HDR + bloom +
+  auto-exposure + ACES, Tier 2), `shadows.js` (directional shadow
+  map, Tier 2).
 - `game/js/world/` — `city.js` (10×10 blocks, 5 districts, landmarks),
   `city-meshes.js`, `collision.js`, `roads.js` (road graph, lanes,
-  traffic lights), `props.js`.
+  traffic lights), `props.js`, `traffic-lights.js` (signal-head
+  geometry, Tier 2).
 - `game/js/entities/` — `player.js`, `vehicle.js`, `character.js`,
-  `pedestrian.js`.
+  `pedestrian.js`, `helicopter.js` (Rajawali, Tier 2).
 - `game/js/ai/` — `traffic.js`, `police.js` (wanted 0–5, LOS-based
-  hunt), `combat-ai.js`.
-- `game/js/combat/` — `weapons.js`, `pickups.js`.
-- `game/js/fx/particles.js`, `game/js/story/` — `missions.js` (6
-  missions), `dialogue.js`, `cutscene.js`.
-- `game/js/ui/` — `hud.js`, `minimap.js`, `bigmap.js`, `menus.js`
-  (title/pause/settings/controls/credits), `notifications.js`.
-- `game/js/audio/sfx.js` — synthesized SFX. `game/js/audio/music/`
-  does NOT exist yet (Tier 2).
-- `game/js/debug/shots.js` — `?shot=N` screenshot scenes.
+  hunt, Rajawali spawn 3+ stars, Tier 2), `combat-ai.js`.
+- `game/js/combat/` — `weapons.js`, `pickups.js` (weapon pickups,
+  Tier 2).
+- `game/js/fx/` — `particles.js`, `lights.js` (point-light registry,
+  Tier 2), `rain.js` (weather, Tier 2).
+- `game/js/story/` — `missions.js` (6 missions), `dialogue.js`,
+  `cutscene.js`.
+- `game/js/ui/` — `hud.js` (weather, radio pop-up, hit marker,
+  Tier 2), `minimap.js` (GPS route, Tier 2), `bigmap.js` (waypoint
+  routes, Tier 2), `menus.js` (title/pause/settings/controls/credits),
+  `notifications.js`.
+- `game/js/audio/sfx.js` — synthesized SFX. `game/js/audio/music/` —
+  `synth.js`, `fx.js`, `sequencer.js`, `radio.js`, `score.js`,
+  `index.js`, `songs/` (title, neon-tide, rain-kemuning,
+  bukit-sunrise, pursuit, lin-theme) — all hand-written, Tier 2.
+- `game/js/debug/shots.js` — `?shot=N` screenshot scenes (chase +
+  docks updated to night + rain in Tier 2).
 - `game/js/save.js` — localStorage save (`selara-bay-save-v1`).
 - `screenshots/` — 4 JPEGs, 1280×720, ~33–39 KiB each (≤ 256 KiB).
+  Tier 1 era — retake at Checkpoint 2.
 - `tools/` — `playtest.mjs` (25 checks), `screenshots.mjs`,
   `fpsdiag.mjs`, `m4diag2.mjs`, `m4smoke.mjs`, `m3diag.mjs`,
   `fdiag.mjs`, `inputdiag.mjs`, `aimdiag2.mjs`, `drivetest.mjs`,
-  `smoke.mjs`, `package.json` (minimal, handwritten).
-- `MUSIC.md` — soundtrack plan (data only, no implementation yet).
+  `smoke.mjs`, `bootcheck.mjs`, `probe-tier2.mjs`,
+  `probe-step14.mjs`, `probe-gun.mjs`, `package.json` (minimal,
+  handwritten).
+- `MUSIC.md` — soundtrack plan + what is implemented (Tier 2: title,
+  Neon Tide, Rain on Kemuning, Bukit Asri Sunrise, Pursuit, Lin's
+  Theme; Tier 3: the other 6 radio songs + Viktor theme + credits).
 
 ## Step-10 fixes (this session, in the working tree)
 
@@ -211,6 +224,77 @@ Read from `~/workspace/gta6-kit/gta6-01-kit/`: `RULES.txt` (537 lines),
    bloom / light counts are recorded in the preset but apply once
    those systems land in Tier 2.
 
+## Steps 11–14 (Tier 2, this session)
+
+11. **Rendering (commit aa73d12):** directional shadow map (2048²
+    High / 1024² Medium / off Low, texel-snapped ortho fitted to the
+    camera, PCF 3×3), post chain (HDR RGBA16F, bright-pass, bloom,
+    ACES, vignette, grade, auto-exposure by 4×4 luminance readback),
+    night point lights (registry, 12/24/48 per preset, lamps +
+    headlights + taillights + lightbars + muzzle flash), rain (clear↔
+    rain cycles, streaks + splashes, wet roads with fresnel glint,
+    rain SFX), traffic-light signal heads (4 per intersection, live
+    red/amber/green). LIT shader: shadow + 48-light array + grime +
+    wet + `uTonemap` flag (the filmic shoulder is off when the post
+    chain runs, so nothing is tonemapped twice). Sky: procedural
+    clouds. Fixed in step 12: `makeProgram` returns a wrapper, so
+    `useProgram` needs `.program`; `rain` was created before
+    `notifications`/`particles`/`sfx` (TDZ) — moved after `cutscene`.
+    Verified: `tools/probe-tier2.mjs` (Medium, 22:00, rain forced):
+    post on, shadow 1024², 24 lights, wet 1, 0 errors.
+12. **Wiring (commit cea833a):** shadow pass + HDR target in
+    `beginFrame`/`endFrame`, quality presets drive shadow size /
+    post / light cap, rain dims the palette, HUD weather ("— Rain")
+    + radio pop-up + hit marker. Verified by the same probe.
+13. **Feel (commit f4b08d8):** `talk` / `hit` (flinch, wins over the
+    AI's per-frame pose) / `jump` poses; cutscene facing (cast turns
+    to face each other), rule-of-thirds close-ups, warm key + cold
+    rim lights on the speaker. Verified: cutscene screenshot
+    `screenshots/03-mission-cutscene.jpg` (49,654 bytes) — Lin in
+    3/4 profile, speaking gesture, warm key light.
+14. **Guns, heli, GPS, music (this commit):**
+    - **Weapon models:** kobra/wasp/thunder geometry in the right
+      hand (rig, `char-gun-*` batches), synced from the player and
+      from gang/boss spawns (Viktor carries the wasp). Verified:
+      `charSystem.batches['gun-wasp'].count` = 1 and the renderer
+      batch count = 1 while Kai holds it.
+    - **Thunder unlock:** M5's `onComplete` spawns a `weapon` pickup
+      (purple crate) at the garage + notification; collecting it
+      unlocks + equips the Thunder with 24 ammo. Verified by the
+      probe (weapons `[fists, wasp, thunder]`, mag 6 / 24).
+    - **Rajawali:** spawns at 3+ stars, orbits the player at ~65 m,
+      spotlight cone + pool light, fires bursts at 4+ stars; leaves
+      (climbs away) when wanted hits 0. Verified: active at 4 stars
+      (y 65), inactive after the clear.
+    - **GPS:** `Minimap.setRouteTo` (A* route from the player, drawn
+      blue), `BigMap.setWaypoint` routes to the waypoint, mission
+      stages route to their objective on entry, and a 1 s refresh in
+      `main.js` re-routes to the live target (a waypoint wins over
+      the mission; reaching it clears it; the beam + marker follow a
+      moving target like M6's car). Verified: waypoint route 6 nodes.
+    - **Music:** hand-written Web Audio synth (subtractive bass/lead,
+      FM e-piano + bells, Karplus-Strong pluck, supersaw pad, noise
+      drums) + lookahead sequencer with swing + mix chain (compressor,
+      tempo-synced dotted-eighth delay, generated-impulse reverb,
+      radio lowpass). Title theme "Heat on the Coast" starts on the
+      first gesture and plays on the title screen + on foot. Radio:
+      3 stations (Selara Nights FM / Ombak Lo-Fi / Gamelan Wave, one
+      song each in Tier 2), starts when Kai gets in a car, R switches
+      station, HUD pop-up announces station + song, muffled (700 Hz)
+      for 3 s after stepping out, then back to the theme. Score:
+      "Pursuit" at 3+ stars (silences the radio), "Lin's Theme" in
+      cutscenes, stingers for passed/failed/FLATLINED/CUFFED.
+      Verified by `tools/probe-step14.mjs`: **15/15 PASS, 0 errors**
+      (title theme, radio start, R switch, muffle 747 Hz, 3 s fade,
+      chase score, heli, GPS, Thunder pickup, stingers).
+    - **Shots:** chase + docks are now night + rain (the heli spawns
+      from the 4-star wanted level in the chase shot).
+    - **Probe lesson (not a game bug):** at ~2 fps in SwiftShader,
+      `dt` is clamped to 0.1 s/frame, so game time runs ~5× slower
+      than real time — the heli despawn, the radio's 3 s timer and
+      the gun-batch read all need multi-second real waits. The
+      probe's waits are annotated with this.
+
 ## Open bugs / known gaps
 
 - **Playtest: 26/26 PASS** (21 Nov ~11:05 WITA). The 8 failures from
@@ -229,19 +313,14 @@ Read from `~/workspace/gta6-kit/gta6-01-kit/`: `RULES.txt` (537 lines),
   on this machine — that is a machine limit, stated plainly. On a
   real GPU the same presets will run far faster; High is the
   screenshot quality and does not need real-time FPS.
-- **Tier 2 missing:** shadow map 2048² PCF, post chain (HDR + bloom +
-  auto-exposure + ACES + vignette + grade), night point lights 32–48,
-  rain + wet roads, traffic-light signal-head geometry, Rajawali
-  helicopter + spotlight, music system (`game/js/audio/music/`),
-  GPS route wiring (minimap.route is never set), Wasp/Thunder models
-  + unlock wiring. Traffic-light logic and GPS drawing exist; the
-  geometry/wiring do not.
-- **Tier 3 missing:** roadblocks, shoot-down heli, full soundtrack +
-  MUSIC.md, side content (12 Orchid tags, respray, gun shop, stats
-  screen), adaptive resolution, slow motion, hit markers, extra props.
-- **Screenshots:** 4 exist and are current for Tier 1; retake only if
-  visuals change materially (Tier 2 will change them — retake then,
-  on High).
+- **Tier 2 done (steps 11–14).** The full playtest has NOT been
+  re-run since step 10 — that is Checkpoint 2 (step 15), next.
+- **Tier 3 missing:** roadblocks, shoot-down heli, full soundtrack
+  (6 more radio songs + Viktor theme + credits) + MUSIC.md, side
+  content (12 Orchid tags, respray, gun shop, stats screen),
+  adaptive resolution, slow motion, hit markers, extra props.
+- **Screenshots:** 4 exist and are Tier 1 era; retake at Checkpoint 2
+  (Tier 2 changed the visuals materially — night lights, rain, heli).
 - **GitHub About** (website on make.fun + topic `makefun`) must be set
   before submit — bos/leader job, not the build agent's.
 - **`.makefun/freshness.json`** predates this session; leave it alone.
@@ -253,6 +332,9 @@ Read from `~/workspace/gta6-kit/gta6-01-kit/`: `RULES.txt` (537 lines),
 
 - `node tools/playtest.mjs` (headed Chrome, Xvfb :99, Low preset) —
   expect 25/25 PASS and `PLAYTEST ALL PASS`, exit 0.
+- `node tools/probe-step14.mjs` (headed Chrome, Xvfb :99) — expect
+  15/15 PASS, 0 errors (~80 s; the waits are long because game time
+  runs ~5× slower than real time at ~2 fps in SwiftShader).
 - `MAKEFUN_OUTPUT_DIR=<dir> node main.ts` twice — exit 0, ≤ 10 s,
   byte-identical output.
 - `node tools/fpsdiag.mjs` — FPS per preset, headed Chrome.

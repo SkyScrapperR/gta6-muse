@@ -99,6 +99,40 @@ function headphonesGeometry() {
   return g;
 }
 
+// --- Gun models (Tier 2): one batch per weapon, pivot at the grip,
+// barrel toward local +z so the rig can hang them off the right hand. ---
+const GUNMETAL = [0.16, 0.16, 0.18];
+const GUN_DARK = [0.08, 0.08, 0.09];
+const GUN_WOOD = [0.42, 0.28, 0.14];
+
+function gunKobraGeometry() {
+  const g = emptyGeometry();
+  box(g, 0, 0.02, 0.08, 0.05, 0.07, 0.24, GUNMETAL);
+  box(g, 0, -0.06, -0.02, 0.045, 0.12, 0.06, GUN_DARK);
+  box(g, 0, 0.03, 0.2, 0.04, 0.04, 0.05, GUN_DARK);
+  return g;
+}
+
+function gunWaspGeometry() {
+  const g = emptyGeometry();
+  box(g, 0, 0.02, 0.1, 0.06, 0.09, 0.42, GUNMETAL);
+  box(g, 0, -0.08, 0.02, 0.05, 0.16, 0.08, GUN_DARK);
+  box(g, 0, 0.01, -0.24, 0.05, 0.07, 0.14, GUN_DARK);
+  box(g, 0, 0.03, 0.28, 0.035, 0.035, 0.12, GUN_DARK);
+  box(g, 0, -0.05, -0.08, 0.045, 0.1, 0.06, GUN_DARK);
+  return g;
+}
+
+function gunThunderGeometry() {
+  const g = emptyGeometry();
+  box(g, 0, 0.03, 0.25, 0.06, 0.06, 0.5, GUNMETAL);
+  box(g, 0, -0.03, 0.22, 0.07, 0.06, 0.22, GUN_WOOD);
+  box(g, 0, 0.01, -0.05, 0.07, 0.09, 0.3, GUNMETAL);
+  box(g, 0, -0.01, -0.3, 0.06, 0.09, 0.22, GUN_WOOD);
+  box(g, 0, -0.06, -0.16, 0.05, 0.1, 0.06, GUN_WOOD);
+  return g;
+}
+
 // --- The rig ---
 
 // Local offsets (metres) of each joint from the character root (feet).
@@ -139,6 +173,9 @@ export class CharacterSystem {
       ['foot', footGeometry()],
       ['glasses', glassesGeometry()],
       ['headphones', headphonesGeometry()],
+      ['gun-kobra', gunKobraGeometry()],
+      ['gun-wasp', gunWaspGeometry()],
+      ['gun-thunder', gunThunderGeometry()],
     ];
     for (const [name, geo] of defs) {
       this.batches[name] = {
@@ -297,7 +334,16 @@ export class CharacterSystem {
     this.put('armLow', elL, o.jacket);
     this.put('armLow', elR, o.jacket);
     this.put('hand', child(elL, [0, -0.32, 0]), o.skin);
-    this.put('hand', child(elR, [0, -0.32, 0]), o.skin);
+    const handR = child(elR, [0, -0.32, 0]);
+    this.put('hand', handR, o.skin);
+    // Gun in the right hand (Tier 2): shown whenever the character
+    // carries a weapon and is not driving, sitting or dead. The gun's
+    // pivot is its grip; it hangs off the hand, pointing along the
+    // hand's forward (+z in hand space).
+    if (!dead && c.weapon && c.weapon !== 'fists' && c.pose !== 'drive' && c.pose !== 'sit') {
+      const gunM = mat4Multiply(handR, mat4TRS(0, -0.02, 0.1, 0, 0, 0, 1, 1, 1));
+      this.put('gun-' + c.weapon, gunM, [1, 1, 1]);
+    }
 
     // Legs: hips swing, knees bend.
     let legLx = 0, legRx = 0, kneeL = 0, kneeR = 0;

@@ -1,7 +1,7 @@
 // Minimap: a circular, rotating map rendered from a pre-rendered city
 // image (drawn once at boot). North is the player's heading, so the map
 // turns with Kai. The same city image feeds the full-screen big map.
-import { HALF, GRID, streetCoord } from '../world/roads.js';
+import { HALF, GRID, streetCoord, findRoute, routeWaypoints, nearestNode } from '../world/roads.js';
 
 const MAP_SIZE = 1024;
 const WORLD_EXTENT = 560; // world units from the centre to the map edge
@@ -100,6 +100,22 @@ export class Minimap {
     this.route = null; // [[x, z], ...] GPS polyline or null
     this.markers = []; // {x, z, color, label}
     this.searchCenter = null; // [x, z] wanted search area
+  }
+
+  // GPS (Tier 2): route from the player to a world point, over the road
+  // graph. The polyline is drawn on the minimap; clear it with
+  // clearRoute(). The first point is the player's exact position so the
+  // line connects to the arrow.
+  setRouteTo(x, z) {
+    const route = findRoute(nearestNode(this.player.x, this.player.z), nearestNode(x, z));
+    if (!route || route.length < 2) { this.route = null; return false; }
+    this.route = routeWaypoints(route);
+    this.route[0] = [this.player.x, this.player.z];
+    return true;
+  }
+
+  clearRoute() {
+    this.route = null;
   }
 
   // Convert a world point to minimap canvas coordinates (before rotation).

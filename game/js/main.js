@@ -31,8 +31,10 @@ import { BigMap } from './ui/bigmap.js';
 import { Menus } from './ui/menus.js';
 import { SaveSystem } from './save.js';
 import { Sfx } from './audio/sfx.js';
+import { MusicSystem } from './audio/music/index.js';
 import { CutscenePlayer } from './story/cutscene.js';
 import { MissionSystem } from './story/missions.js';
+import { Helicopter } from './entities/helicopter.js';
 import { setupShot } from './debug/shots.js';
 import { makeRng, rngInt } from './core/math.js';
 
@@ -46,6 +48,8 @@ renderer.createParticleMesh();
 let hour = 17.6; // golden hour for the first smoke test
 let deadT = 0;
 let wasDead = false;
+let gpsT = 0; // GPS re-route timer (Tier 2)
+let wasInCar = false; // music: track car entry/exit (Tier 2)
 let lastTime = performance.now();
 let fpsFrames = 0;
 let fpsTime = 0;
@@ -140,6 +144,7 @@ police.onArrest = () => {
   player.arrest(hq.x, hq.z);
   police.clearWanted();
   hud.setBanner('CUFFED', 'Dropped at Police HQ — $100');
+  music.stinger('cuffed');
 };
 
 // --- UI, save and audio. ---
@@ -150,6 +155,15 @@ const hud = new HUD(hudCanvas, player, police, minimap, notifications);
 const bigMap = new BigMap(renderer, cityMap, player, minimap);
 const save = new SaveSystem(player);
 const sfx = new Sfx();
+// Tier 2: the music system (title theme, radio, chase/cutscene score).
+// Created lazily on the first gesture — the AudioContext cannot start
+// before one — and the theme keeps playing from the title screen into
+// the game.
+const music = new MusicSystem(sfx);
+music.onRadioChange = (text) => hud.showRadio(text);
+const startMusicOnce = () => music.playTitle();
+window.addEventListener('pointerdown', startMusicOnce, { once: true });
+window.addEventListener('keydown', startMusicOnce, { once: true });
 
 const game = {
   state: 'title', // title | playing | paused | map
@@ -289,6 +303,12 @@ pickups.onCollect = (kind, amount) => {
   if (kind === 'health') player.heal(amount);
   else if (kind === 'cash') player.money += amount;
   else if (kind === 'ammo' && player.weapon !== 'fists') player.ammo[player.weapon] = (player.ammo[player.weapon] ?? 0) + amount;
+  else if (kind === 'weapon') {
+    // A new gun: add it to the loadout, equip it, top up its reserve.
+    player.giveWeapon(amount, 24);
+    player.setWeapon(amount);
+    notifications.success(`${WEAPONS[amount]?.name ?? amount} acquired`);
+  }
 };
 vehicles.onWreck = (v) => {
   particles.explosion(v.x, 0.5, v.z);
@@ -371,9 +391,15 @@ const rain = new RainSystem({ notifications, particles, sfx });
 const missions = new MissionSystem({
   renderer, player, vehicles, combatAI, police, pickups, city,
   minimap, hud, notifications, sfx, save, cutscene, charSystem,
-  peds, traffic, game, pierCar,
+  peds, traffic, game, pierCar, music,
   setHour: (h) => { hour = h; },
 });
+// Tier 2: Rajawali, the police helicopter (3+ stars). Created after
+// `game` exists because it reads the game state (no firing in shot mode).
+const heli = new Helicopter({
+  renderer, player, police, particles, sfx, weapons, lightRegistry, game,
+});
+police.heli = heli;
 
 // --- Screenshot scenes (?shot=title|chase|cutscene|docks). ---
 let shotInfo = { camera: null, hud: false, cutscene: false };
@@ -382,7 +408,7 @@ if (shotName) {
   shotInfo = setupShot(shotName, {
     renderer, player, vehicles, combatAI, police, pickups, city,
     minimap, hud, notifications, sfx, save, cutscene, charSystem,
-    peds, traffic, game, pierCar, missions,
+    peds, traffic, game, pierCar, missions, rain,
     setHour: (h) => { hour = h; },
   });
   menus.hideAll();
@@ -464,6 +490,18 @@ function frame(now) {
   // Click the 3D view to lock the pointer while playing.
   if (game.state === 'playing' && input.pressedLeft()) input.requestLock();
 
+  // --- Music (Tier 2). R switches the radio station while driving.
+  // The radio starts when Kai gets in a car and the score adapts to
+  // the wanted level and cutscenes.
+  if (game.state === 'playing' && player.inCar && input.pressed('KeyR')) {
+    music.nextStation();
+  }
+  if (!!player.inCar !== wasInCar) {
+    wasInCar = !!player.inCar;
+    music.setInCar(wasInCar);
+  }
+  music.update(dt, { wanted: police.wanted, inCutscene: game.state === 'cutscene' });
+
   // --- Simulation. The city stays alive behind the title screen and
   // during cutscenes; the game freezes while paused or while the map is
   // open. Combat freezes during cutscenes so nobody shoots Kai mid-line.
@@ -474,6 +512,29 @@ function frame(now) {
       player.update(dt, t, vehicles);
       missions.update(dt, t);
       combatAI.update(dt, t);
+      // GPS refresh (Tier 2): keep the route attached to the player and
+      // the live objective; a waypoint the player set wins over the
+      // mission, and reaching it clears it.
+      gpsT += dt;
+      if (gpsT > 1) {
+        gpsT = 0;
+        if (bigMap.waypoint) {
+          if (Math.hypot(player.x - bigMap.waypoint.x, player.z - bigMap.waypoint.z) < 10) {
+            bigMap.clearWaypoint();
+            notifications.info('Waypoint reached');
+          } else {
+            minimap.setRouteTo(bigMap.waypoint.x, bigMap.waypoint.z);
+          }
+        } else if (missions.active && missions.stageDef?.target) {
+          const [tx, tz] = missions.stageDef.target(missions);
+          minimap.setRouteTo(tx, tz);
+          // Keep the beam + marker on a moving target (M2's Vesper,
+          // M6's escape car) instead of where it was at stage entry.
+          if (missions.marker && Math.hypot(tx - missions.marker.x, tz - missions.marker.z) > 5) {
+            missions.setTarget(tx, tz, missions.stageDef.radius ?? 10);
+          }
+        }
+      }
       // The clock advances: one game hour per four real minutes.
       hour = (hour + dt / 240) % 24;
       // Safehouse: press E near the marker to save.
@@ -495,6 +556,7 @@ function frame(now) {
     traffic.update(dt, t, player);
     peds.update(dt, t, vehicles);
     police.update(dt, t);
+    heli.update(dt, t);
     particles.update(dt);
     pickups.update(dt, t);
     vehicles.update(dt, t);
@@ -507,6 +569,7 @@ function frame(now) {
     // hospital after a beat on the ground.
     if (player.dead && !wasDead) {
       hud.setBanner('FLATLINED', 'You woke up at Selara General — $100', 3);
+      music.stinger('flatlined');
       if (missions.active) missions.onPlayerDeath();
     }
     wasDead = player.dead;
@@ -605,6 +668,8 @@ function frame(now) {
   pickups.draw();
   bigMap.drawBeam();
   missions.drawBeam();
+  heli.draw(t);
+  renderer.drawCone();
   renderer.drawWater(palette, t, 520);
   particles.draw();
   renderer.endFrame();
@@ -669,6 +734,8 @@ window.__selara = {
   rain,
   lightRegistry,
   trafficLightMeshes,
+  heli,
+  music,
   get fps() { return fps; },
   get hour() { return hour; },
   setHour(h) { hour = h; },
