@@ -16,6 +16,8 @@ export class Input {
     this.pressedMouseRight = false;
     this.mouseDX = 0;
     this.mouseDY = 0;
+    this.mouseX = 0;
+    this.mouseY = 0;
     this.mouseLeft = false;
     this.mouseRight = false;
     this.prevMouseLeft = false;
@@ -36,6 +38,8 @@ export class Input {
     document.addEventListener('mousemove', (e) => {
       this.mouseDX += e.movementX || 0;
       this.mouseDY += e.movementY || 0;
+      this.mouseX = e.clientX;
+      this.mouseY = e.clientY;
     });
     canvas.addEventListener('mousedown', (e) => {
       if (e.button === 0) { this.mouseLeft = true; this.pressedMouseLeft = true; }

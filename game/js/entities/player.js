@@ -41,6 +41,7 @@ export class Player {
     this.punchHitDone = false;
     this.onShoot = null; // (weaponKey) => void, wired by main.js
     this.onPunch = null; // () => void, wired by main.js
+    this.onReload = null; // () => void, wired by main.js
     this.aiming = false;
     this.inCar = null; // vehicle object, or null
     this.punchT = 0;
@@ -91,6 +92,7 @@ export class Player {
     if (this.weapon === 'fists' || this.reloadT > 0) return;
     if (this.mag[this.weapon] >= w.mag || (this.ammo[this.weapon] ?? 0) <= 0) return;
     this.reloadT = w.reload;
+    if (this.onReload) this.onReload();
   }
 
   finishReload() {

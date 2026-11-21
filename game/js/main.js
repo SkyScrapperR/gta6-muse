@@ -21,27 +21,35 @@ import { ParticleSystem } from './fx/particles.js';
 import { WeaponSystem, WEAPONS } from './combat/weapons.js';
 import { PickupSystem } from './combat/pickups.js';
 import { CombatAI } from './ai/combat-ai.js';
+import { NotificationSystem } from './ui/notifications.js';
+import { CityMap, Minimap } from './ui/minimap.js';
+import { HUD } from './ui/hud.js';
+import { BigMap } from './ui/bigmap.js';
+import { Menus } from './ui/menus.js';
+import { SaveSystem } from './save.js';
+import { Sfx } from './audio/sfx.js';
 import { makeRng, rngInt } from './core/math.js';
 
 const glCanvas = document.getElementById('gl');
 const hudCanvas = document.getElementById('hud');
-const hud = hudCanvas.getContext('2d');
+const hudCtx = hudCanvas.getContext('2d');
 
 const renderer = new Renderer(glCanvas);
 renderer.createParticleMesh();
 
 let hour = 17.6; // golden hour for the first smoke test
-let camAngle = 0;
 let deadT = 0;
+let wasDead = false;
 let lastTime = performance.now();
 let fpsFrames = 0;
 let fpsTime = 0;
 let fps = 0;
+let qualityDpr = 1.5;
 
 function resize() {
   const w = window.innerWidth;
   const h = window.innerHeight;
-  renderer.resize(w, h, Math.min(window.devicePixelRatio || 1, 2));
+  renderer.resize(w, h, Math.min(window.devicePixelRatio || 1, qualityDpr));
   hudCanvas.width = w;
   hudCanvas.height = h;
 }
@@ -92,7 +100,75 @@ police.onArrest = () => {
   const hq = city.landmark('policeHQ');
   player.arrest(hq.x, hq.z);
   police.clearWanted();
+  hud.setBanner('CUFFED', 'Dropped at Police HQ — $100');
 };
+
+// --- UI, save and audio. ---
+const notifications = new NotificationSystem();
+const cityMap = new CityMap(city);
+const minimap = new Minimap(cityMap, player);
+const hud = new HUD(hudCanvas, player, police, minimap, notifications);
+const bigMap = new BigMap(renderer, cityMap, player, minimap);
+const save = new SaveSystem(player);
+const sfx = new Sfx();
+
+const game = {
+  state: 'title', // title | playing | paused | map
+  newGame() {
+    sfx.ensure();
+    save.clear();
+    player.money = 250;
+    player.health = 100;
+    player.armor = 0;
+    player.weapons = ['fists'];
+    player.weapon = 'fists';
+    player.ammo = { kobra: 0, wasp: 0, thunder: 0 };
+    player.mag = { kobra: 0, wasp: 0, thunder: 0 };
+    hour = 17.6;
+    player.spawn(pier.x, pier.z, Math.PI);
+    police.clearWanted();
+    combatAI.clear();
+    this.state = 'playing';
+    menus.hideAll();
+    notifications.mission('Welcome back to Selara Bay, Kai.');
+  },
+  continueGame() {
+    sfx.ensure();
+    save.load();
+    this.state = 'playing';
+    menus.hideAll();
+    notifications.info('Welcome back, Kai.');
+  },
+  resumeGame() {
+    this.state = 'playing';
+    menus.hideAll();
+  },
+  saveAndQuitToTitle() {
+    save.save();
+    this.state = 'title';
+    menus.setHasSave(true);
+    menus.show('title');
+  },
+  quitToTitle() {
+    this.state = 'title';
+    menus.show('title');
+  },
+  applyQuality(q) {
+    qualityDpr = q === 'low' ? 1 : q === 'high' ? 2 : 1.5;
+    resize();
+  },
+  setVolume(kind, v) { sfx.setVolume(kind, v); },
+};
+const menus = new Menus(game);
+menus.setHasSave(save.hasSave());
+menus.show('title');
+
+// Cinematic camera for the title screen: a slow low orbit over the city.
+function titleCamera(t) {
+  const a = t * 0.045;
+  const pos = [Math.cos(a) * 230, 55 + Math.sin(t * 0.1) * 12, Math.sin(a) * 230];
+  return { pos, target: [0, 25, 0], fov: (62 * Math.PI) / 180, near: 0.3, far: 3000 };
+}
 
 // --- Combat: particles, weapons, pickups, gang AI. ---
 const particles = new ParticleSystem(renderer);
@@ -140,17 +216,20 @@ combatAI.onMemberDown = (m) => {
   else pickups.add('ammo', m.c.x + 1, m.c.z, 12);
 };
 pickups.onCollect = (kind, amount) => {
+  sfx.pickup();
   if (kind === 'health') player.heal(amount);
   else if (kind === 'cash') player.money += amount;
   else if (kind === 'ammo' && player.weapon !== 'fists') player.ammo[player.weapon] = (player.ammo[player.weapon] ?? 0) + amount;
 };
 vehicles.onWreck = (v) => {
   particles.explosion(v.x, 0.5, v.z);
+  sfx.explosion();
   peds.fleeFrom(v.x, v.z, 40);
 };
 
 // Player shooting: camera-ray aim point, then a real bullet from the muzzle.
 player.onShoot = (weaponKey) => {
+  sfx.shot();
   const w = WEAPONS[weaponKey];
   const cam = player.cameraForRender();
   const cdx = cam.target[0] - cam.pos[0];
@@ -189,9 +268,11 @@ player.onShoot = (weaponKey) => {
     if (witness) police.addWanted(1);
   }
 };
+player.onReload = () => sfx.reload();
 
 // Player punching: anything close in front takes the hit.
 player.onPunch = () => {
+  sfx.punch();
   const [fx, fz] = [Math.sin(player.heading), Math.cos(player.heading)];
   for (const c of charSystem.characters) {
     if (c === player.char || c.pose === 'dead') continue;
@@ -228,37 +309,107 @@ function frame(now) {
     fpsFrames = 0;
     fpsTime = 0;
   }
-
-  camAngle += dt * 0.08;
-  void camAngle;
-  player.update(dt, now / 1000, vehicles);
-  traffic.update(dt, now / 1000, player);
-  peds.update(dt, now / 1000, vehicles);
-  police.update(dt, now / 1000);
-  combatAI.update(dt, now / 1000);
-  particles.update(dt);
-  pickups.update(dt, now / 1000);
-  vehicles.update(dt, now / 1000);
-  charSystem.update(dt, now / 1000);
-  // FLATLINED: after a beat on the ground, Kai wakes up at the hospital.
-  if (player.dead) {
-    deadT += dt;
-    if (deadT > 2.5) {
-      deadT = 0;
-      const hosp = city.landmark('hospital');
-      player.money = Math.max(0, player.money - 100);
-      player.weapons = ['fists'];
-      player.weapon = 'fists';
-      player.ammo = { kobra: 0, wasp: 0, thunder: 0 };
-      player.mag = { kobra: 0, wasp: 0, thunder: 0 };
-      player.spawn(hosp.x, hosp.z, 0);
-      police.clearWanted();
-    }
-  }
-  const camera = player.cameraForRender();
-  const palette = skyPalette(hour);
   const t = now / 1000;
 
+  // --- State keys. Esc exits pointer lock first in the browser, so P
+  // also pauses. ---
+  if (input.pressed('Escape') || input.pressed('KeyP')) {
+    if (game.state === 'playing') {
+      game.state = 'paused';
+      menus.show('pause');
+      input.exitLock();
+    } else if (game.state === 'paused') {
+      game.resumeGame();
+    } else if (game.state === 'map') {
+      game.state = 'playing';
+      bigMap.open = false;
+    }
+  }
+  if (input.pressed('KeyM') && (game.state === 'playing' || game.state === 'map')) {
+    if (game.state === 'playing') {
+      game.state = 'map';
+      bigMap.open = true;
+      input.exitLock();
+    } else {
+      game.state = 'playing';
+      bigMap.open = false;
+    }
+  }
+  // Click on the big map to set a waypoint.
+  if (game.state === 'map' && input.pressedLeft()) {
+    const wp = bigMap.clickToWorld(input.mouseX, input.mouseY, hudCanvas.width, hudCanvas.height);
+    if (wp) {
+      bigMap.setWaypoint(wp.x, wp.z);
+      notifications.info('Waypoint set');
+      sfx.click();
+    }
+  }
+  // Click the 3D view to lock the pointer while playing.
+  if (game.state === 'playing' && input.pressedLeft()) input.requestLock();
+
+  // --- Simulation. The city stays alive behind the title screen; the
+  // game freezes while paused or while the map is open. ---
+  const simulating = game.state === 'playing' || game.state === 'title';
+  if (simulating) {
+    if (game.state === 'playing') {
+      player.update(dt, t, vehicles);
+      // The clock advances: one game hour per four real minutes.
+      hour = (hour + dt / 240) % 24;
+      // Safehouse: press E near the marker to save.
+      const sh = city.landmark('safehouse');
+      if (!player.inCar && Math.hypot(player.x - sh.x, player.z - sh.z) < 8) {
+        hud.objectiveSub = 'Safehouse — press E to save';
+        if (input.pressed('KeyE')) {
+          save.save();
+          notifications.success('Game saved at the safehouse');
+          sfx.pickup();
+        }
+      } else {
+        hud.objectiveSub = '';
+      }
+    }
+    traffic.update(dt, t, player);
+    peds.update(dt, t, vehicles);
+    police.update(dt, t);
+    combatAI.update(dt, t);
+    particles.update(dt);
+    pickups.update(dt, t);
+    vehicles.update(dt, t);
+    charSystem.update(dt, t);
+    // FLATLINED: after a beat on the ground, Kai wakes up at the hospital.
+    if (player.dead && !wasDead) {
+      hud.setBanner('FLATLINED', 'You woke up at Selara General — $100', 3);
+    }
+    wasDead = player.dead;
+    if (player.dead) {
+      deadT += dt;
+      if (deadT > 2.5) {
+        deadT = 0;
+        const hosp = city.landmark('hospital');
+        player.money = Math.max(0, player.money - 100);
+        player.weapons = ['fists'];
+        player.weapon = 'fists';
+        player.ammo = { kobra: 0, wasp: 0, thunder: 0 };
+        player.mag = { kobra: 0, wasp: 0, thunder: 0 };
+        player.spawn(hosp.x, hosp.z, 0);
+        police.clearWanted();
+      }
+    }
+    // Traffic horns: a short honk every couple of seconds while blocked.
+    for (const c of traffic.cars) {
+      if (c.v.honk && t - (c.lastHonkAt ?? -99) > 2) {
+        c.lastHonkAt = t;
+        sfx.horn();
+      }
+    }
+  }
+
+  // --- Camera. ---
+  const titleHour = 18.2;
+  const camera = game.state === 'title' ? titleCamera(t) : player.cameraForRender();
+  const palette = skyPalette(game.state === 'title' ? titleHour : hour);
+
+  // --- Render. ---
   renderer.cameraPos = camera.pos;
   renderer.beginFrame(camera, palette, t);
   renderer.drawSky(palette, t);
@@ -269,21 +420,24 @@ function frame(now) {
   vehicles.draw();
   weapons.drawDecals();
   pickups.draw();
+  bigMap.drawBeam();
   renderer.drawWater(palette, t, 520);
   particles.draw();
   renderer.endFrame();
 
-  hud.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
-  hud.fillStyle = 'rgba(255,255,255,0.9)';
-  hud.font = 'bold 20px sans-serif';
-  hud.fillText(`SELARA BAY — driving — ${fps} fps`, 16, 30);
-  hud.font = '14px sans-serif';
-  const carInfo = player.inCar ? ` — ${player.inCar.name} ${(Math.abs(player.inCar.speed) * 3.6).toFixed(0)} km/h` : '';
-  const stars = '★'.repeat(police.wanted) + '☆'.repeat(5 - police.wanted);
-  const w = WEAPONS[player.weapon];
-  const ammoInfo = player.weapon === 'fists' ? 'fists' : `${w.name} ${player.mag[player.weapon]}/${player.ammo[player.weapon] ?? 0}${player.reloadT > 0 ? ' reloading' : ''}`;
-  hud.fillText(`draw calls ${renderer.drawCalls} — tris ${renderer.triangles} — ${city.districtNameAt(player.x, player.z)} — ${player.speed.toFixed(1)} m/s${carInfo} — ${stars} — peds ${peds.peds.length}`, 16, 54);
-  hud.fillText(`HP ${Math.ceil(player.health)} — $${player.money} — ${ammoInfo}${player.dead ? ' — FLATLINED' : ''}`, 16, 76);
+  // --- 2D overlay. ---
+  hud.hour = game.state === 'title' ? titleHour : hour;
+  hud.district = city.districtNameAt(player.x, player.z);
+  minimap.searchCenter = police.searchCenter;
+  if (game.state === 'playing') {
+    hud.draw(dt);
+  } else {
+    hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
+  }
+  if (game.state === 'map') {
+    bigMap.draw(hudCtx, hudCanvas.width, hudCanvas.height);
+  }
+  sfx.update(camera, player, police.copCars);
   input.endFrame();
 
   requestAnimationFrame(frame);
@@ -293,7 +447,7 @@ requestAnimationFrame(frame);
 
 // Debug hook for the automated playtest: real state, never a stub.
 window.__selara = {
-  version: 'combat-0',
+  version: 'ui-0',
   renderer,
   player,
   city,
@@ -307,6 +461,14 @@ window.__selara = {
   weapons,
   pickups,
   combatAI,
+  hud,
+  minimap,
+  bigMap,
+  menus,
+  save,
+  sfx,
+  notifications,
+  game,
   get fps() { return fps; },
   get hour() { return hour; },
   setHour(h) { hour = h; },
