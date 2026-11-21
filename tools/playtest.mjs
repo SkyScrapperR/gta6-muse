@@ -60,13 +60,25 @@ try {
   await page.waitForTimeout(1500);
   let s = await S();
   check('new game starts M1', s.state === 'playing' && s.mission === 'm1', JSON.stringify(s));
-  // Walk / sprint / jump on foot.
+  // Walk / sprint / jump on foot. Poll until Kai has actually moved
+  // > 1.2 m (timeout 6 s wall): at ~1 fps a fixed 2.5 s window is
+  // only 2-3 frames and dt clamps at 0.1 s, so Kai moves ~1.1 m
+  // and the fixed check flakes (run 2). Polling measures the move,
+  // not the wall clock.
   const p0 = await page.evaluate(() => [window.__selara.player.x, window.__selara.player.z]);
   await page.keyboard.down('KeyW');
-  await page.waitForTimeout(2500);
+  let moved = 0;
+  const w0 = Date.now();
+  while (Date.now() - w0 < 6000) {
+    await page.waitForTimeout(300);
+    const pn = await page.evaluate(() => [window.__selara.player.x, window.__selara.player.z]);
+    moved = Math.hypot(pn[0] - p0[0], pn[1] - p0[1]);
+    if (moved > 1.2) break;
+  }
   await page.keyboard.up('KeyW');
   const p1 = await page.evaluate(() => [window.__selara.player.x, window.__selara.player.z]);
-  check('walk moves Kai', Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) > 1.2, `moved ${Math.hypot(p1[0] - p0[0], p1[1] - p0[1]).toFixed(1)}m`);
+  moved = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+  check('walk moves Kai', moved > 1.2, `moved ${moved.toFixed(1)}m`);
   await page.keyboard.press('Space');
   await page.waitForTimeout(500);
   // Enter the Merpati and drive with the keyboard.
