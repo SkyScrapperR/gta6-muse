@@ -538,12 +538,16 @@ money path $5,550 after M6 → $5,450 death → $5,350 arrest).
 
 ## Open bugs / known gaps
 
-- **Playtest: 26/26 PASS, 0 console errors** (Checkpoint 2, 21 Nov
-  ~12:45 WITA, log `~/workspace/playtest-checkpoint2-run4.log`).
-  Money path verified end to end: $5,550 after M6 → $5,450 after
-  death → $5,350 after arrest. See the Step 15 section for the
-  FPS-collapse fix and the test-side fixes (M4 polls, M2 wanted
-  clear, big-map polling).
+- **Playtest: 26/26 PASS, 0 console errors** (final checkpoint,
+  run 3, 21 Nov ~14:07 WITA, log `~/workspace/playtest-final-run3.log`,
+  ~7 min). Walk check now polls until Kai moves > 1.2 m (6 s
+  timeout) — run 2 flaked at 1.1 m in a fixed 2.5 s window.
+  Money path verified end to end: $5,550 after M6 → $5,350 after
+  death + arrest. main.ts deterministic 2× (exit 0, byte-identical,
+  dossier sha256 `4342621f…`, 474,707 B). Compliance checker:
+  11 PASS, 0 FAIL, 1 BELUM-BISA-DICEK (dossier — scorer-side),
+  log `~/workspace/compliance-final3.log`. All 4 screenshots
+  1280×720, ≤ 256 KiB.
 - **FPS on this machine (measured 21 Nov ~12:46, `tools/fpsdiag.mjs`,
   title screen, headed Chrome, SwiftShader, no GPU): Low mean 2.8 fps
   (samples 4, 4, 2, 2, 2; backing 640×360), Medium mean 0.6 fps
@@ -559,10 +563,9 @@ money path $5,550 after M6 → $5,450 death → $5,350 arrest).
   need real-time FPS.
 - **Checkpoint 2 done (step 15). Step 16 done (Tier 3 core).
   Step 17 done (polish). Step 18 done (final checkpoint).**
-  All 18 steps done — verification of the final state (full
-  playtest run 3, main.ts determinism, compliance checker) is
-  running in this session; results land in this section when
-  they are in.
+  All 18 steps done and the final state is verified (playtest
+  run 3, main.ts determinism, compliance checker — results in
+  the playtest bullet above).
 - **Tier 3 remaining:** nothing — adaptive resolution, slow
   motion, hit markers, food carts, soundtrack, roadblocks, heli
   shoot-down, tags, respray, gun shop, stats screen all DONE and
