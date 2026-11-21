@@ -186,9 +186,18 @@ export class CharacterSystem {
     b.count++;
   }
 
+  // Flinch: a 0.25 s hit reaction. Only the timer is stored — the rig
+  // reads it in rigCharacter, so the flinch shows even though the AI
+  // overwrites c.pose every frame.
+  flinch(c) {
+    if (!c || c.pose === 'dead') return;
+    c.hitT = 0.25;
+  }
+
   update(dt, time) {
     for (const b of Object.values(this.batches)) b.count = 0;
     for (const c of this.characters) {
+      if (c.hitT > 0) c.hitT -= dt;
       this.rigCharacter(c, dt, time);
     }
     for (const [name, b] of Object.entries(this.batches)) {
@@ -229,27 +238,48 @@ export class CharacterSystem {
       return mat4Multiply(parent, m);
     };
 
-    // Torso (slight lean when running, twist when aiming).
+    // A hit flinch overrides the upper body for 0.25 s, whatever the
+    // pose field says (the AI rewrites it every frame).
+    const flinching = (c.hitT ?? 0) > 0;
+    const fl = flinching ? Math.max(0, c.hitT / 0.25) : 0;
+
+    // Torso (slight lean when running, twist when aiming, back on a hit).
     const torsoTwist = c.pose === 'aim' ? -0.25 : 0;
-    const torsoLean = running ? 0.12 : 0;
+    const torsoLean = flinching ? -0.2 * fl : running ? 0.12 : 0;
     this.put('torso', local(JOINTS.torso, torsoLean, torsoTwist), o.jacket);
 
-    // Head: looks where the character aims, or along the heading.
+    // Head: looks where the character aims, or along the heading; nods
+    // while talking, snaps back on a hit.
     const headRy = c.pose === 'aim' ? c.aimHeading - c.heading : 0;
-    this.put('head', local(JOINTS.head, 0, headRy), o.skin);
+    const headRx = flinching ? -0.18 * fl
+      : c.pose === 'talk' ? Math.sin(time * 2.4 + c.phase) * 0.07 : 0;
+    this.put('head', local(JOINTS.head, headRx, headRy), o.skin);
     const hairBatch = 'hair-' + (o.hairStyle || 'short');
-    this.put(hairBatch, local(JOINTS.hair, 0, headRy), o.hair);
-    if (o.glasses) this.put('glasses', local(JOINTS.head, 0, headRy), [1, 1, 1]);
-    if (o.headphones) this.put('headphones', local(JOINTS.head, 0, headRy), [1, 1, 1]);
+    this.put(hairBatch, local(JOINTS.hair, headRx, headRy), o.hair);
+    if (o.glasses) this.put('glasses', local(JOINTS.head, headRx, headRy), [1, 1, 1]);
+    if (o.headphones) this.put('headphones', local(JOINTS.head, headRx, headRy), [1, 1, 1]);
 
     // Arms: shoulders hang from the torso; elbows hang from the shoulders.
     let armLx = 0, armRx = 0, armLz = 0, armRz = 0, elbowL = -0.25, elbowR = -0.25;
-    if (c.pose === 'aim') {
+    if (flinching) {
+      armRx = -0.7 * fl; armLx = -0.7 * fl;
+      armLz = 0.3 * fl; armRz = -0.3 * fl;
+      elbowL = -1.0 * fl; elbowR = -1.0 * fl;
+    } else if (c.pose === 'aim') {
       armRx = -1.35; armLx = -0.95; armLz = 0.35; elbowL = -0.5; elbowR = -0.08;
+    } else if (c.pose === 'talk') {
+      // Speaking gesture: the right hand moves while the left stays low.
+      const g = Math.sin(time * 3.2 + c.phase) * 0.3;
+      armRx = -0.85 + g; armLx = -0.35; armLz = 0.25; armRz = -0.15;
+      elbowR = -0.55; elbowL = -0.7;
     } else if (c.pose === 'punch') {
       const ext = Math.sin(Math.min(c.punchT, 1) * Math.PI);
       armRx = -1.5 * ext; elbowR = -0.05;
       armLx = -0.3; elbowL = -0.6;
+    } else if (c.pose === 'jump') {
+      // Arms out for balance while airborne.
+      armLx = -0.25; armRx = -0.25; armLz = 0.45; armRz = -0.45;
+      elbowL = -0.4; elbowR = -0.4;
     } else if (c.pose === 'drive' || c.pose === 'sit') {
       armRx = -1.05; armLx = -1.05; elbowL = -0.35; elbowR = -0.35;
     } else if (moving) {
@@ -273,6 +303,9 @@ export class CharacterSystem {
     let legLx = 0, legRx = 0, kneeL = 0, kneeR = 0;
     if (c.pose === 'drive' || c.pose === 'sit') {
       legLx = -1.35; legRx = -1.35; kneeL = 1.25; kneeR = 1.25;
+    } else if (c.pose === 'jump') {
+      // Tucked while airborne.
+      legLx = -0.7; legRx = -0.45; kneeL = 1.3; kneeR = 1.0;
     } else if (moving) {
       legLx = -swing; legRx = swing;
       kneeL = Math.max(0, Math.sin(c.phase + 0.6)) * 0.9;

@@ -155,6 +155,9 @@ export class Player {
       this.dead = true;
       this.char.pose = 'dead';
       this.char.deadT = 0;
+    } else {
+      // Flinch: the rig shows it for 0.25 s (see character.js).
+      this.char.hitT = 0.25;
     }
   }
 
@@ -305,6 +308,7 @@ export class Player {
     // Pose.
     this.char.pose = this.punchT > 0 ? 'punch'
       : this.aiming ? 'aim'
+      : this.y > 0.05 ? 'jump'
       : this.speed > 4.2 ? 'run'
       : this.speed > 0.3 ? 'walk' : 'idle';
     this.char.aimHeading = this.camYaw;

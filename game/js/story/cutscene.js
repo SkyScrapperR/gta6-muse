@@ -25,12 +25,21 @@ export class CutscenePlayer {
     this.lineT = 0;
     this.playing = true;
     this.onDone = onDone;
+    // Face the cast toward each other: a close-up only works when the
+    // speaker's face is toward the listener (and the camera beside them).
+    if (cast.a && cast.b) {
+      cast.a.heading = Math.atan2(cast.b.x - cast.a.x, cast.b.z - cast.a.z);
+      cast.b.heading = Math.atan2(cast.a.x - cast.b.x, cast.a.z - cast.b.z);
+    }
     this.updateCamera();
   }
 
   stop() {
     this.playing = false;
     this.lines = [];
+    // The cast stops talking the moment the scene ends.
+    if (this.cast.a) this.cast.a.pose = 'idle';
+    if (this.cast.b) this.cast.b.pose = 'idle';
     if (this.onDone) {
       const cb = this.onDone;
       this.onDone = null;
@@ -59,6 +68,15 @@ export class CutscenePlayer {
     return this.lines[this.index] ?? null;
   }
 
+  // The character speaking the current line (null for narration).
+  get speaker() {
+    const line = this.currentLine();
+    if (!line || !this.cast.a) return null;
+    if (line.s === 'kai') return this.cast.a;
+    if (line.s === 'narrator') return this.cast.a;
+    return this.cast.b ?? this.cast.a;
+  }
+
   // Camera for the current line, framed on the cast.
   updateCamera() {
     const line = this.currentLine();
@@ -72,6 +90,11 @@ export class CutscenePlayer {
     const subject = line.s === 'kai' ? a : (b ?? a);
     const other = subject === a ? b : a;
     const shot = !other || line.s === 'narrator' ? 'wide' : (line.s === 'kai' ? 'close-a' : 'close-b');
+    // Talk pose (Tier 2): the speaker gestures, the listener stands
+    // still. The narrator line leaves both idle.
+    const talking = line.s === 'kai' ? a : line.s === 'narrator' ? null : b;
+    if (a) a.pose = talking === a ? 'talk' : 'idle';
+    if (b) b.pose = talking === b ? 'talk' : 'idle';
     let pos, altPos, target, fov;
     // Narrator lines frame Kai alone, wherever he is; the two-shot is for
     // dialogue between two characters standing together.
@@ -97,6 +120,14 @@ export class CutscenePlayer {
       target = [c.x, 1.45, c.z];
       pos = [c.x + px * 3.5 + fx * 0.5, 1.7, c.z + pz * 3.5 + fz * 0.5];
       altPos = [c.x - px * 3.5 + fx * 0.5, 1.7, c.z - pz * 3.5 + fz * 0.5];
+      // Rule of thirds (Tier 2): shift the aim point sideways so the
+      // speaker's face sits on a third-line instead of dead centre.
+      // Kai and the other speaker take opposite thirds across the cut.
+      const fwdx = target[0] - pos[0], fwdz = target[2] - pos[2];
+      const fl = Math.hypot(fwdx, fwdz) || 1;
+      const rx = -fwdz / fl, rz = fwdx / fl;
+      const third = shot === 'close-a' ? 0.7 : -0.7;
+      target = [target[0] + rx * third, target[1], target[2] + rz * third];
       fov = 50;
     } else {
       // Wide on a single character (narrator): low and close, the

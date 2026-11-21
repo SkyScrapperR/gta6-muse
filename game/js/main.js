@@ -255,8 +255,9 @@ function damageCharacter(c, dmg, shooter) {
       c.pose = 'dead';
       c.speed = 0;
       if (shooter === player) police.addWanted(2);
-    } else if (shooter === player) {
-      police.addWanted(1);
+    } else {
+      charSystem.flinch(c);
+      if (shooter === player) police.addWanted(1);
     }
     return;
   }
@@ -268,6 +269,7 @@ function damageCharacter(c, dmg, shooter) {
     peds.fleeFrom(c.x, c.z, 30);
     if (shooter === player) police.addWanted(1);
   } else {
+    charSystem.flinch(c);
     peds.fleeFrom(c.x, c.z, 20);
   }
 }
@@ -564,6 +566,18 @@ function frame(now) {
   }
   if (muzzleFlash && t - muzzleFlash.t < 0.12) {
     lightRegistry.addDynamic(muzzleFlash.x, muzzleFlash.y, muzzleFlash.z, 1, 0.85, 0.4, 1.2, 12);
+  }
+  // Cutscene lighting (Tier 2): a warm key from the camera side and a
+  // cool rim from behind the speaker, so faces read in the dark.
+  if (game.state === 'cutscene' && cutscene.camera) {
+    const sp = cutscene.speaker;
+    if (sp) {
+      const cam = cutscene.camera;
+      const dx = cam.pos[0] - sp.x, dz = cam.pos[2] - sp.z;
+      const dl = Math.hypot(dx, dz) || 1;
+      lightRegistry.addDynamic(sp.x + (dx / dl) * 3, 3.2, sp.z + (dz / dl) * 3, 1, 0.8, 0.55, 0.7, 10);
+      lightRegistry.addDynamic(sp.x - (dx / dl) * 3, 3.5, sp.z - (dz / dl) * 3, 0.4, 0.6, 1, 0.5, 8);
+    }
   }
   lightRegistry.update(player.x, player.y + 2, player.z, lightCap, palette.night);
   renderer.wet = rain.wet;

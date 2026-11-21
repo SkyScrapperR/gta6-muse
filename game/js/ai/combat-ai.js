@@ -80,10 +80,14 @@ export class CombatAI {
       member.c.deadT = 0;
       member.state = 'dead';
       if (this.onMemberDown) this.onMemberDown(member);
-    } else if (member.health < 20 && member.state !== 'retreat') {
-      member.state = 'retreat';
-      member.stateT = 2;
-      this.findCover(member);
+    } else {
+      // A hit staggers the enforcer for a beat (see character.js).
+      this.charSystem.flinch(member.c);
+      if (member.health < 20 && member.state !== 'retreat') {
+        member.state = 'retreat';
+        member.stateT = 2;
+        this.findCover(member);
+      }
     }
   }
 
