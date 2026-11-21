@@ -25,6 +25,9 @@ export class PoliceSystem {
     this.dropT = 0;
     this.onArrest = null;
     this.heli = null; // Rajawali (Tier 2), set by main.js
+    this.roadblock = null; // Tier 3: {cars: [v, v], x, z} sealing the road ahead
+    this.roadblockT = 0; // cooldown before the next block forms
+    this.onRoadblock = null; // (x, z) => void, wired by main.js
   }
 
   addWanted(n) {
@@ -99,6 +102,45 @@ export class PoliceSystem {
     const c = this.footCops[i];
     this.charSystem.remove(c.c);
     this.footCops.splice(i, 1);
+  }
+
+  // Roadblock (Tier 3): at 3+ stars the police seal the road ahead of
+  // Kai with two parked Garudas across it and a foot cop on each side.
+  // The cars are parked, not patrols — they sit in `roadblock`, not in
+  // `copCars`, so they never chase and never count toward the patrol
+  // cap. The block holds until the heat is gone (or both cars are
+  // wrecked — ramming through is a valid way out).
+  spawnRoadblock() {
+    const p = this.player;
+    // Ahead of Kai, along his heading, snapped to the nearest road
+    // node so the cars sit on the road, not in a building.
+    const heading = p.inCar ? p.inCar.heading : p.heading;
+    const ax = p.x + Math.sin(heading) * 70;
+    const az = p.z + Math.cos(heading) * 70;
+    const node = nearestNode(clamp(ax, -HALF + 20, HALF - 20), clamp(az, -HALF + 20, HALF - 20));
+    const [nx, nz] = nodePos(node);
+    // Face the player: the cars nose toward the incoming traffic, side
+    // by side across the road.
+    const h = Math.atan2(p.x - nx, p.z - nz);
+    const rx = Math.cos(h), rz = -Math.sin(h);
+    const cars = [];
+    for (const side of [-2.4, 2.4]) {
+      const v = this.vehicles.add('garuda', nx + rx * side, nz + rz * side, h);
+      v.parked = true;
+      cars.push(v);
+    }
+    for (const side of [-5, 5]) {
+      this.spawnFootCop(nx + rx * side, nz + rz * side);
+    }
+    this.roadblock = { cars, x: nx, z: nz };
+    if (this.onRoadblock) this.onRoadblock(nx, nz);
+  }
+
+  removeRoadblock() {
+    if (!this.roadblock) return;
+    for (const v of this.roadblock.cars) this.vehicles.remove(v);
+    this.roadblock = null;
+    this.roadblockT = 20;
   }
 
   update(dt, time) {
@@ -209,8 +251,21 @@ export class PoliceSystem {
           c.pose = 'idle';
         }
       }
+
+      // Roadblocks (Tier 3): at 3+ stars the police seal the road
+      // ahead. If both block cars are wrecked the block is breached
+      // and a new one may form after the cooldown.
+      this.roadblockT -= dt;
+      if (this.wanted >= 3 && !this.roadblock && this.roadblockT <= 0) {
+        this.spawnRoadblock();
+      } else if (this.roadblock && this.roadblock.cars.every((v) => v.wreck)) {
+        this.roadblock = null;
+        this.roadblockT = 15;
+      }
     } else {
-      // No heat: units drive off and stand down.
+      // No heat: units drive off and stand down — and the roadblock
+      // packs up.
+      if (this.roadblock) this.removeRoadblock();
       for (let i = this.copCars.length - 1; i >= 0; i--) {
         const c = this.copCars[i];
         const dPlayer = Math.hypot(p.x - c.v.x, p.z - c.v.z);
@@ -232,7 +287,10 @@ export class PoliceSystem {
     // when the heat is gone. Its own update (follow, spotlight, fire)
     // runs from main.js.
     if (this.heli) {
-      if (this.wanted >= 3 && !this.heli.active) this.heli.spawn(p.x, p.z);
+      // A heli that was flying away comes straight back when the heat
+      // returns — otherwise it climbs to 130 m first (~40 s at 2 fps)
+      // and Kai fights 4 stars with no heli overhead.
+      if (this.wanted >= 3 && (!this.heli.active || this.heli.leaving)) this.heli.spawn(p.x, p.z);
       else if (this.wanted === 0 && this.heli.active && !this.heli.leaving) this.heli.despawn();
     }
   }

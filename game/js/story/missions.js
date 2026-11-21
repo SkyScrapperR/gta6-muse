@@ -158,17 +158,21 @@ export class MissionSystem {
     this.w.hud.objectiveSub = '';
     this.w.hud.progress = null;
     if (m.reward) {
-      if (m.reward.money) this.w.player.money += m.reward.money;
+      if (m.reward.money) {
+        this.w.player.money += m.reward.money;
+        this.w.stats.moneyEarned += m.reward.money;
+      }
       if (m.reward.weapon) {
         this.w.player.giveWeapon(m.reward.weapon, m.reward.ammo ?? 48);
         this.w.player.setWeapon(m.reward.weapon);
       }
     }
+    this.w.stats.missionsCompleted++;
     this.w.notifications.success(`Mission complete: ${m.name} — ${m.rewardText ?? ''}`);
     this.w.sfx.sting();
     this.w.music?.stinger('passed');
     if (m.onComplete) m.onComplete(this);
-    this.w.save.save({ missions: this.completedIds });
+    this.w.save.save({ missions: this.completedIds, stats: this.w.stats.toJSON(), tags: this.w.side.toJSON() });
     // The next mission starts after a breath.
     if (this.current + 1 < MISSIONS.length) {
       this.nextMissionT = 4;

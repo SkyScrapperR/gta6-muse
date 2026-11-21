@@ -23,6 +23,10 @@ export class HUD {
     this.radioText = null; // current radio station + song, with expiry
     this.radioUntil = 0;
     this.hitMarkerT = -99; // last hit, for the crosshair X (Tier 3)
+    this.shop = null; // SideContent shop, drawn when the game is in 'shop' state
+    this.stats = null; // Stats object, set by main.js
+    this.showStats = false; // Tab toggles the stats screen
+    this.interactPrompt = ''; // 'press E' hint near tags/shops (Tier 3)
   }
 
   setBanner(text, sub, seconds = 3) {
@@ -190,6 +194,17 @@ export class HUD {
       ctx.fillText(this.radioText, W / 2, H - 108);
     }
 
+    // Interact prompt (Tier 3): 'press E' near a tag or a shop.
+    if (this.interactPrompt) {
+      ctx.textAlign = 'center';
+      ctx.font = '15px sans-serif';
+      const tw = ctx.measureText(this.interactPrompt).width;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(W / 2 - tw / 2 - 14, H - 96, tw + 28, 28);
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.fillText(this.interactPrompt, W / 2, H - 76);
+    }
+
     // Bottom-right: minimap with health/armor arcs.
     this.minimap.draw(ctx, W - 116, H - 116);
 
@@ -235,5 +250,86 @@ export class HUD {
       }
       ctx.shadowBlur = 0;
     }
+
+    // Shop panel (Tier 3) and stats screen (Tier 3) draw last, over
+    // everything else — the game is frozen while the shop is open.
+    if (this.shop) this.drawShop(ctx, W, H);
+    if (this.showStats && this.stats) this.drawStats(ctx, W, H);
+  }
+
+  // Shop list: number keys buy, Esc closes. Disabled items show why.
+  drawShop(ctx, W, H) {
+    const shop = this.shop;
+    const pw = 460, ph = 90 + shop.items.length * 30;
+    const x0 = (W - pw) / 2, y0 = (H - ph) / 2;
+    ctx.fillStyle = 'rgba(8,10,16,0.92)';
+    ctx.fillRect(x0, y0, pw, ph);
+    ctx.strokeStyle = '#ffd23f';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x0, y0, pw, ph);
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillText(shop.title, x0 + 20, y0 + 34);
+    ctx.font = '15px sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillText(`Cash: $${Math.floor(this.player.money)}`, x0 + 20, y0 + 58);
+    shop.items.forEach((it, i) => {
+      const y = y0 + 88 + i * 30;
+      const afford = this.player.money >= it.price;
+      ctx.font = '16px sans-serif';
+      ctx.fillStyle = it.disabled ? 'rgba(255,255,255,0.35)'
+        : !afford ? 'rgba(255,122,92,0.9)' : 'rgba(255,255,255,0.95)';
+      ctx.fillText(`${it.key}. ${it.label}${it.disabled ? ` — ${it.disabledReason}` : ''}`, x0 + 20, y);
+      ctx.textAlign = 'right';
+      ctx.fillText(`$${it.price}`, x0 + pw - 20, y);
+      ctx.textAlign = 'left';
+    });
+    ctx.font = '14px sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillText('Press a number to buy — Esc to leave', x0 + 20, y0 + ph - 14);
+  }
+
+  // Stats screen (Tier 3): Tab toggles, the game keeps running behind it.
+  drawStats(ctx, W, H) {
+    const s = this.stats;
+    const rows = [
+      ['Money earned', `$${Math.floor(s.moneyEarned).toLocaleString('en-US')}`],
+      ['Missions completed', `${s.missionsCompleted} / 6`],
+      ['Kills', String(s.kills)],
+      ['Accuracy', `${s.accuracy}% (${s.shotsHit}/${s.shotsFired} hits)`],
+      ['Deaths', String(s.deaths)],
+      ['Arrests', String(s.arrests)],
+      ['Helicopters shot down', String(s.heliDowns)],
+      ['Orchid tags', `${s.tagsFound} / 12`],
+      ['Cars resprayed', String(s.carsResprayed)],
+      ['Spent in shops', `$${Math.floor(s.shopSpent).toLocaleString('en-US')}`],
+      ['Distance driven', `${(s.distanceDriven / 1000).toFixed(1)} km`],
+      ['Time played', s.playTime],
+    ];
+    const pw = 480, ph = 70 + rows.length * 28;
+    const x0 = (W - pw) / 2, y0 = (H - ph) / 2;
+    ctx.fillStyle = 'rgba(8,10,16,0.92)';
+    ctx.fillRect(x0, y0, pw, ph);
+    ctx.strokeStyle = '#ffd23f';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x0, y0, pw, ph);
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillText('KAI SANTOSO — STATS', x0 + 20, y0 + 34);
+    ctx.font = '16px sans-serif';
+    rows.forEach(([label, value], i) => {
+      const y = y0 + 64 + i * 28;
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.fillText(label, x0 + 20, y);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.fillText(value, x0 + pw - 20, y);
+      ctx.textAlign = 'left';
+    });
+    ctx.font = '14px sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillText('Tab to close', x0 + 20, y0 + ph - 14);
   }
 }

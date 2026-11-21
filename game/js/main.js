@@ -34,6 +34,8 @@ import { Sfx } from './audio/sfx.js';
 import { MusicSystem } from './audio/music/index.js';
 import { CutscenePlayer } from './story/cutscene.js';
 import { MissionSystem } from './story/missions.js';
+import { Stats } from './story/stats.js';
+import { SideContent } from './story/side.js';
 import { Helicopter } from './entities/helicopter.js';
 import { setupShot } from './debug/shots.js';
 import { makeRng, rngInt } from './core/math.js';
@@ -151,6 +153,7 @@ player.onEnterCar = (car, wasParked) => {
   if (nearCop) police.addWanted(1);
 };
 police.onArrest = () => {
+  stats.arrests++;
   const hq = city.landmark('policeHQ');
   player.arrest(hq.x, hq.z);
   police.clearWanted();
@@ -166,6 +169,14 @@ const hud = new HUD(hudCanvas, player, police, minimap, notifications);
 const bigMap = new BigMap(renderer, cityMap, player, minimap);
 const save = new SaveSystem(player);
 const sfx = new Sfx();
+const stats = new Stats();
+// Tier 3: Orchid tags, Kilat Respray, Bang Bang Arms.
+const side = new SideContent({ renderer, player, vehicles, city, hud, notifications, sfx, stats });
+hud.stats = stats;
+save.onLoad = (data) => {
+  stats.fromJSON(data.stats);
+  side.fromJSON(data.tags);
+};
 // Tier 2: the music system (title theme, radio, chase/cutscene score).
 // Created lazily on the first gesture — the AudioContext cannot start
 // before one — and the theme keeps playing from the title screen into
@@ -177,10 +188,12 @@ window.addEventListener('pointerdown', startMusicOnce, { once: true });
 window.addEventListener('keydown', startMusicOnce, { once: true });
 
 const game = {
-  state: 'title', // title | playing | paused | map
+  state: 'title', // title | playing | paused | map | shop | cutscene | shot
   newGame() {
     sfx.ensure();
     save.clear();
+    stats.reset();
+    side.tags.forEach((t) => { t.found = false; });
     player.money = 250;
     player.health = 100;
     player.armor = 0;
@@ -216,7 +229,7 @@ const game = {
     menus.hideAll();
   },
   saveAndQuitToTitle() {
-    save.save();
+    save.save({ missions: missions.completedIds, stats: stats.toJSON(), tags: side.toJSON() });
     this.state = 'title';
     menus.setHasSave(true);
     menus.show('title');
@@ -224,6 +237,16 @@ const game = {
   quitToTitle() {
     this.state = 'title';
     menus.show('title');
+  },
+  // Credits panel (Tier 3): the reprise plays once, then the title theme.
+  playCredits() {
+    music.ensure();
+    music.score?.playCredits();
+  },
+  playTitleTheme() {
+    music.ensure();
+    // stopCredits hands the bus back to the title theme itself.
+    music.score?.stopCredits();
   },
   applyQuality(q) {
     const preset = q === 'low' ? 'low' : q === 'high' ? 'high' : 'medium';
@@ -288,7 +311,10 @@ function damageCharacter(c, dmg, shooter) {
     if (c.health <= 0) {
       c.pose = 'dead';
       c.speed = 0;
-      if (shooter === player) police.addWanted(2);
+      if (shooter === player) {
+        police.addWanted(2);
+        stats.kills++;
+      }
     } else {
       charSystem.flinch(c);
       if (shooter === player) police.addWanted(1);
@@ -301,7 +327,10 @@ function damageCharacter(c, dmg, shooter) {
     c.pose = 'dead';
     c.speed = 0;
     peds.fleeFrom(c.x, c.z, 30);
-    if (shooter === player) police.addWanted(1);
+    if (shooter === player) {
+      police.addWanted(1);
+      stats.kills++;
+    }
   } else {
     charSystem.flinch(c);
     peds.fleeFrom(c.x, c.z, 20);
@@ -312,6 +341,7 @@ weapons.onCharacterHit = (c, dmg, shooter) => damageCharacter(c, dmg, shooter);
 weapons.onPlayerHit = (dmg) => player.damage(dmg);
 weapons.onVehicleHit = (v, dmg) => v.damage(dmg);
 combatAI.onMemberDown = (m) => {
+  stats.kills++;
   // Fallen enforcers drop something useful.
   const roll = Math.random();
   if (roll < 0.4) pickups.add('health', m.c.x + 1, m.c.z, 25);
@@ -340,6 +370,7 @@ vehicles.onWreck = (v) => {
 player.onShoot = (weaponKey) => {
   sfx.shot();
   const w = WEAPONS[weaponKey];
+  stats.shotsFired += w.pellets;
   const cam = player.cameraForRender();
   const cdx = cam.target[0] - cam.pos[0];
   const cdy = cam.target[1] - cam.pos[1];
@@ -363,6 +394,12 @@ player.onShoot = (weaponKey) => {
     const dir = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
     const hit = weapons.fireHitscan(muzzle, dir, w.range, w.damage, player, { player });
     particles.tracer(muzzle, hit.point);
+    // A pellet that connects counts toward accuracy and flashes the
+    // hit marker (Tier 3).
+    if (hit.kind === 'char' || hit.kind === 'vehicle' || hit.kind === 'heli') {
+      stats.shotsHit++;
+      hud.showHitMarker();
+    }
     if (hit.kind === 'wall') {
       particles.impactSpark(hit.point[0], hit.point[1], hit.point[2], -dir[0], -dir[1], -dir[2]);
       weapons.addDecal(hit.point, dir);
@@ -410,7 +447,7 @@ const cutscene = new CutscenePlayer(city.collision);
 const rain = new RainSystem({ notifications, particles, sfx });
 const missions = new MissionSystem({
   renderer, player, vehicles, combatAI, police, pickups, city,
-  minimap, hud, notifications, sfx, save, cutscene, charSystem,
+  minimap, hud, notifications, sfx, save, stats, side, cutscene, charSystem,
   peds, traffic, game, pierCar, music,
   setHour: (h) => { hour = h; },
 });
@@ -420,6 +457,24 @@ const heli = new Helicopter({
   renderer, player, police, particles, sfx, weapons, lightRegistry, game,
 });
 police.heli = heli;
+// Roadblocks (Tier 3): warn Kai when the police seal the road ahead.
+police.onRoadblock = () => {
+  notifications.warning('Roadblock ahead — the cops sealed the road!');
+};
+// Shooting down the Rajawali (Tier 3): the guns can hit it at 42 m,
+// and a kill pays $500.
+weapons.heli = heli;
+weapons.onHelicopterHit = (h, dmg) => {
+  hud.showHitMarker();
+  h.damage(dmg);
+  if (h.shotDown) {
+    stats.heliDowns++;
+    player.money += 500;
+    stats.moneyEarned += 500;
+    notifications.success('Rajawali down! +$500 bounty');
+    music.stinger('mission');
+  }
+};
 
 // --- Screenshot scenes (?shot=title|chase|cutscene|docks). ---
 let shotInfo = { camera: null, hud: false, cutscene: false };
@@ -486,6 +541,20 @@ function frame(now) {
   }
   // F3 toggles the FPS counter (prompt section 2).
   if (input.pressed('F3')) showFps = !showFps;
+  // Stats screen (Tier 3): Tab toggles it while playing.
+  if (input.pressed('Tab') && game.state === 'playing') hud.showStats = !hud.showStats;
+  // Shop (Tier 3): the game is frozen while a shop is open; number
+  // keys buy, Esc or E closes.
+  if (game.state === 'shop') {
+    if (input.pressed('Escape') || input.pressed('KeyE')) {
+      side.closeShop();
+      game.state = 'playing';
+    } else {
+      for (const k of ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6']) {
+        if (input.pressed(k)) side.buy(k.replace('Digit', ''));
+      }
+    }
+  }
   if (input.pressed('KeyM') && (game.state === 'playing' || game.state === 'map')) {
     if (game.state === 'playing') {
       game.state = 'map';
@@ -520,7 +589,7 @@ function frame(now) {
     wasInCar = !!player.inCar;
     music.setInCar(wasInCar);
   }
-  music.update(dt, { wanted: police.wanted, inCutscene: game.state === 'cutscene' });
+  music.update(dt, { wanted: police.wanted, inCutscene: game.state === 'cutscene', cutsceneTheme: cutscene.currentLine()?.s ?? null });
 
   // --- Simulation. The city stays alive behind the title screen and
   // during cutscenes; the game freezes while paused or while the map is
@@ -532,6 +601,9 @@ function frame(now) {
       player.update(dt, t, vehicles);
       missions.update(dt, t);
       combatAI.update(dt, t);
+      // Stats (Tier 3): time on foot or wheels, and distance driven.
+      stats.timePlayed += dt;
+      if (player.inCar) stats.distanceDriven += Math.abs(player.inCar.speed) * dt;
       // GPS refresh (Tier 2): keep the route attached to the player and
       // the live objective; a waypoint the player set wins over the
       // mission, and reaching it clears it.
@@ -555,19 +627,33 @@ function frame(now) {
           }
         }
       }
-      // The clock advances: one game hour per four real minutes.
+    // The clock advances: one game hour per four real minutes.
       hour = (hour + dt / 240) % 24;
       // Safehouse: press E near the marker to save.
       const sh = city.landmark('safehouse');
       if (!player.inCar && Math.hypot(player.x - sh.x, player.z - sh.z) < 8) {
         hud.objectiveSub = 'Safehouse — press E to save';
         if (input.pressed('KeyE')) {
-          save.save({ missions: missions.completedIds });
+          save.save({ missions: missions.completedIds, stats: stats.toJSON(), tags: side.toJSON() });
           notifications.success('Game saved at the safehouse');
           sfx.pickup();
         }
       } else if (!missions.active) {
         hud.objectiveSub = '';
+      }
+      // Side content (Tier 3): Orchid tags and the two shops, E to use.
+      const near = side.nearestInteractable();
+      hud.interactPrompt = near
+        ? near.kind === 'tag' ? 'Orchid tag — press E to spray it'
+          : near.kind === 'respray' ? 'Kilat Respray — press E ($150 repaint + repair)'
+            : 'Bang Bang Arms — press E to shop'
+        : '';
+      if (near && input.pressed('KeyE')) {
+        side.tryInteract();
+        if (side.shop) {
+          game.state = 'shop';
+          hud.interactPrompt = '';
+        }
       }
     }
     if (game.state === 'cutscene') cutscene.update(dt, input);
@@ -585,9 +671,11 @@ function frame(now) {
     // simulation step as the traffic they belong to.
     rain.update(dt, player.x, player.y + 2, player.z);
     trafficLightMeshes.update(t);
+    side.update(dt); // Orchid tag bob (Tier 3)
     // FLATLINED: a mission in progress fails; free roam wakes up at the
     // hospital after a beat on the ground.
     if (player.dead && !wasDead) {
+      stats.deaths++;
       hud.setBanner('FLATLINED', 'You woke up at Selara General — $100', 3);
       music.stinger('flatlined');
       if (missions.active) missions.onPlayerDeath();
@@ -686,6 +774,7 @@ function frame(now) {
   vehicles.draw();
   weapons.drawDecals();
   pickups.draw();
+  side.draw(); // Orchid tag markers (Tier 3)
   bigMap.drawBeam();
   missions.drawBeam();
   heli.draw(t);
@@ -703,7 +792,10 @@ function frame(now) {
   hud.showFps = showFps;
   hud.quality = currentQuality;
   minimap.searchCenter = police.searchCenter;
+  hud.shop = side.shop; // the shop panel draws over the frozen game
   if (game.state === 'playing') {
+    hud.draw(dt);
+  } else if (game.state === 'shop') {
     hud.draw(dt);
   } else if (game.state === 'cutscene') {
     // Cinematic: clear the HUD, then letterbox + subtitles only.
@@ -756,6 +848,8 @@ window.__selara = {
   trafficLightMeshes,
   heli,
   music,
+  stats,
+  side,
   get fps() { return fps; },
   get hour() { return hour; },
   setHour(h) { hour = h; },

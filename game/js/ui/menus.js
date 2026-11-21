@@ -19,11 +19,16 @@ export class Menus {
   el(id) { return document.getElementById(id); }
 
   show(id) {
+    const was = this.current;
     for (const panel of ['title', 'pause', 'settings', 'controls', 'credits']) {
       const e = this.el(panel);
       if (e) e.classList.toggle('hidden', panel !== id);
     }
     this.current = id;
+    // The credits panel owns the music bus: opening it plays the title
+    // theme's reprise once; leaving it returns to the title theme.
+    if (id === 'credits') this.game.playCredits?.();
+    else if (was === 'credits') this.game.playTitleTheme?.();
   }
 
   hideAll() {

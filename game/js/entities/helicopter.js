@@ -1,10 +1,11 @@
 // Rajawali police helicopter (Tier 2): spawns at 3+ stars, follows the
-// player at 55-70 m on a slow orbit, sweeps a visible spotlight cone
+// player on a slow orbit ~40 m up, sweeps a visible spotlight cone
 // over them, and fires bursts at 4+ stars. The spotlight also drops a
 // pool of light on the ground through the night-light registry.
 //
-// Shoot-down (health + falling out of the sky) lands in Tier 3: for
-// now the heli is invulnerable — nothing in the game aims at it yet.
+// Tier 3: the heli can be shot down (health + falling out of the sky).
+// It orbits low enough to hit — the Wasp (range 55) and Kobra (70)
+// reach it, the Thunder (28) does not, which is as it should be.
 import { box, cylinder, sphere, emptyGeometry } from '../engine/mesh.js';
 import { mat4TRS } from '../core/math.js';
 import { clamp } from '../core/math.js';
@@ -58,7 +59,7 @@ export class Helicopter {
 
     this.active = false;
     this.leaving = false;
-    this.x = 0; this.y = 65; this.z = 0;
+    this.x = 0; this.y = 42; this.z = 0;
     this.heading = 0;
     this.rotorAngle = 0;
     this.fireT = 2;
@@ -74,7 +75,7 @@ export class Helicopter {
     this.leaving = false;
     this.x = x + 30;
     this.z = z + 30;
-    this.y = 65;
+    this.y = 42;
     this.health = 100;
     this.shotDown = false;
     this.fallV = 0;
@@ -89,7 +90,8 @@ export class Helicopter {
     this.burstLeft = 0;
   }
 
-  // Tier 3 hook: shooting the heli down. Nothing calls this yet.
+  // Tier 3 hook: shooting the heli down. Wired from main.js via
+  // weapons.onHelicopterHit (the hitscan test lives in fireHitscan).
   damage(dmg) {
     if (!this.active || this.shotDown) return;
     this.health -= dmg;
@@ -123,10 +125,12 @@ export class Helicopter {
       if (this.y > 130) this.active = false;
       return;
     }
-    // Slow orbit around the player, 55-70 m up.
+    // Slow orbit around the player, ~40 m up — low enough to shoot
+    // down with the Wasp or Kobra (Tier 3), high enough to stay out
+    // of shotgun range.
     const tx = p.x + Math.sin(time * 0.12) * 25;
     const tz = p.z + Math.cos(time * 0.12) * 25;
-    const ty = 62 + Math.sin(time * 0.4) * 5;
+    const ty = 42 + Math.sin(time * 0.4) * 4;
     const k = Math.min(1, dt * 0.8);
     this.x += (tx - this.x) * k;
     this.z += (tz - this.z) * k;
@@ -158,7 +162,7 @@ export class Helicopter {
     const from = [this.x, this.y - 1, this.z];
     const dx = p.x - from[0], dy = (p.y + 1.2) - from[1], dz = p.z - from[2];
     const dist = Math.hypot(dx, dy, dz) || 1;
-    // Inaccurate by design: a heli 60 m up should pressure, not shred.
+    // Inaccurate by design: a heli ~40 m up should pressure, not shred.
     const spread = 0.06;
     const yaw = Math.atan2(dx, dz) + (Math.random() * 2 - 1) * spread;
     const pitch = Math.atan2(dy, Math.hypot(dx, dz)) + (Math.random() * 2 - 1) * spread;

@@ -7,9 +7,10 @@ prompt, 21 Nov 10:12) before continuing.
 ## Current step
 
 **Step 15 of 18: Checkpoint 2 — DONE 21 Nov ~12:49 WITA** (commit
-pending; playtest re-run + FPS + screenshots below). Next: **Tier 3
-(step 16)** — roadblocks, heli shoot-down, full soundtrack +
-`MUSIC.md`, side content, stats screen.
+c054f5c; playtest 26/26, FPS + screenshots below). **Step 16 of 18
+(Tier 3): DONE 21 Nov ~13:30 WITA** (commit pending; probe 18/18
+below). Next: **step 17** — adaptive resolution, slow motion, extra
+props + feel tuning; then **step 18** (final checkpoint).
 
 ## The main.ts contract (from the kit — step 1 revision)
 
@@ -374,6 +375,86 @@ money path $5,550 after M6 → $5,450 death → $5,350 arrest).
   Scratch probes (batchdump, cpuprofile, lightcount,
   profile-frame, profile-nolights, tinyviewport) deleted.
 
+## Step 16 (Tier 3, this session) — DONE 21 Nov ~13:30 WITA
+
+- **Soundtrack (9 new songs, all hand-written, same data format as
+  Tier 2):** Selara Nights FM gains Coastline Run (116 BPM, C),
+  Orchid After Dark (100, Dm), Midnight Merpati (112, Em); Ombak
+  Lo-Fi gains Warung at 2AM (82, Bb9, swing 0.16), Slow Waves (72,
+  Eb7, swing 0.12); Gamelan Wave gains Pier 9 (110, slendro-ish),
+  Kecak Circuit (124, pelog-ish). Plus Viktor's theme (84, Dm,
+  score only) and the credits reprise "Heat on the Coast
+  (Reprise)" (104, Am, loop false). `MUSIC.md` updated: all 10
+  radio songs + Viktor theme + credits song ✅ Tier 3.
+- **Score wiring:** `score.js` `cutsceneTheme` ('lin' | 'viktor')
+  — Viktor's theme plays when he speaks in the M6 boss cutscene,
+  Lin's otherwise; `playCredits()` plays the reprise once, then
+  the title theme; `menus.show()` opens credits on the reprise
+  and returns to the title theme on exit.
+- **Heli shoot-down:** orbit lowered to 42 m (Wasp 55 / Kobra 70
+  reach it, Thunder 28 does not); `weapons.fireHitscan` returns
+  kind `'heli'` (sphere r 3.5); `main.js` wires
+  `weapons.onHelicopterHit` → `heli.damage(dmg)` → shot down
+  pays **$500 bounty** + `stats.heliDowns++`. Probe: 2 hits of 60
+  bring Rajawali down, +$500.
+- **Heli recall fix (found by the probe):** the police only
+  re-spawned the heli when `!active`, so after the heat cleared
+  and returned the heli kept climbing in `leaving` to 130 m
+  (~40 s at 2 fps) and Kai fought 4 stars with no heli overhead.
+  Now `wanted >= 3 && (!active || leaving)` re-spawns it at once
+  (probe: y 42 after re-heat, was 62 before the fix).
+- **Roadblocks:** at 3+ stars `police.spawnRoadblock()` seals the
+  road 70 m ahead of Kai — two parked Garudas across the road
+  (in `roadblock`, not `copCars`, so they never chase or count
+  toward the patrol cap) + a foot cop on each side. The block
+  holds until the heat is gone, or both cars are wrecked (ramming
+  through works — a new block may form after a 15 s cooldown).
+  `onRoadblock` warns Kai ("Roadblock ahead — the cops sealed
+  the road!").
+- **Side content (`game/js/story/side.js`):** 12 Orchid tags on
+  the sidewalk outside 12 landmarks + the ferry pier — walk up,
+  press E, **+$50 each** (tracked in stats, saved). Kilat Respray:
+  drive in, E, pick 1 of 6 colours for **$150 — repaint + full
+  repair**. Bang Bang Arms: walk in, E, 5 items (Kobra ammo ×24
+  $40, Wasp ammo ×64 $60, Thunder ammo ×12 $50, Thunder 12 $600,
+  body armour $200) — items you cannot use are greyed with the
+  reason. The shop freezes the game (state `'shop'`, number keys
+  buy, Esc/E closes) and draws in the HUD.
+- **Shop/tag reachability fix (found by the probe):** measuring
+  from the landmark centre put the markers inside the buildings
+  (walls 8.4 m out, past an 8 m radius) — shops now measure from
+  the sidewalk spot (the door). The two shop tags slide 6 m along
+  the wall so they do not sit on the shop door (E collected the
+  tag when the player meant to open the shop).
+- **Stats (`game/js/story/stats.js`):** moneyEarned,
+  missionsCompleted, kills, shotsFired, shotsHit, deaths,
+  arrests, heliDowns, tagsFound, carsResprayed, shopSpent,
+  timePlayed, distanceDriven; getters `accuracy` and `playTime`
+  (`"12m 34s"`). Counters bump at the real event sites (mission
+  rewards, `damageCharacter`, `combatAI.onMemberDown`,
+  `player.onShoot`, death, arrest, heli bounty, tags, respray,
+  shop buys). **Stats screen:** Tab toggles it in the HUD
+  (money, missions x/6, kills, accuracy, deaths, arrests, helis,
+  tags x/12, resprays, shop spend, distance, time). Stats + tags
+  save with the save file (`stats` + `tags` keys) and restore on
+  load; `newGame` resets both.
+- **Hit markers:** verified wired — a pellet that connects flashes
+  the white X over the crosshair for 0.25 s (`hud.showHitMarker()`,
+  called from the pellet loop in `player.onShoot`).
+- **Probe:** `tools/probe-step16.mjs` **18/18 PASS, 0 console
+  errors** (log `~/workspace/probe-step16-run3.log`, ~53 s):
+  stats zero + getters, 12 tags rendered, all 10 radio songs,
+  cutscene theme follows the speaker (viktor-theme / lin-theme),
+  tag +$50, gun shop open/buy/close, respray open/repaint+repair/
+  close, roadblock forms at 3 stars and lifts at 0, heli active
+  at 42 m and shot down +$500, shot counts + hit marker
+  (accuracy 100%), stats screen Tab toggle, save/load round-trip,
+  game still running. Run 1 was 9/18 — the failures found the
+  heli-recall bug, the shop/tag reachability bug, and two wrong
+  probe expectations (playTime format, 'bukit-sunrise' id); the
+  hit-marker miss was the probe aiming with the default downward
+  pitch instead of levelling the camera (`camPitch = 0`).
+
 ## Open bugs / known gaps
 
 - **Playtest: 26/26 PASS, 0 console errors** (Checkpoint 2, 21 Nov
@@ -395,12 +476,14 @@ money path $5,550 after M6 → $5,450 death → $5,350 arrest).
   machine limit, stated plainly. On a real GPU the same presets
   will run far faster; High is the screenshot quality and does not
   need real-time FPS.
-- **Checkpoint 2 done (step 15).** Next: Tier 3 (steps 16–18).
-- **Tier 3 missing:** roadblocks, shoot-down heli, full soundtrack
-  (7 more radio songs + Viktor theme + credits) + MUSIC.md, side
-  content (12 Orchid tags, respray, gun shop, stats screen),
-  adaptive resolution, slow motion, hit markers (exist in HUD —
-  verify), extra props.
+- **Checkpoint 2 done (step 15). Step 16 done (Tier 3 core).**
+  Next: step 17 (adaptive resolution, slow motion, extra props +
+  feel tuning), then step 18 (final checkpoint).
+- **Tier 3 remaining:** adaptive resolution (MISSING), slow motion
+  (MISSING), extra props + feel tuning. Hit markers verified
+  wired (probe-step16 18/18). Soundtrack, roadblocks, heli
+  shoot-down, tags, respray, gun shop, stats screen all DONE and
+  probed.
 - **Screenshots:** 4 retaken at Checkpoint 2 on High 1280×720
   (01-title 65,988 B; 02-night-chase 54,078 B;
   03-mission-cutscene 49,699 B; 04-docks-firefight 40,878 B);
@@ -421,6 +504,8 @@ money path $5,550 after M6 → $5,450 death → $5,350 arrest).
 - `node tools/probe-step14.mjs` (headed Chrome, Xvfb :99) — expect
   15/15 PASS, 0 errors (~80 s; the waits are long because game time
   runs ~5× slower than real time at ~2 fps in SwiftShader).
+- `node tools/probe-step16.mjs` (headed Chrome, Xvfb :99) — expect
+  18/18 PASS, 0 errors (~55 s; log `~/workspace/probe-step16-run3.log`).
 - `MAKEFUN_OUTPUT_DIR=<dir> node main.ts` twice — exit 0, ≤ 10 s,
   byte-identical output.
 - `node tools/fpsdiag.mjs` — FPS per preset, headed Chrome.

@@ -34,25 +34,25 @@ lead, arp, fx), and an arrangement. Nothing is a recording or a sample.
 | Song | Tempo | Key | Mood | Status |
 | --- | --- | --- | --- | --- |
 | Neon Tide | 108 BPM | A minor | Driving night cruise | ✅ Tier 2 |
-| Coastline Run | 116 BPM | C major | Fast coastal highway | Tier 3 |
-| Orchid After Dark | 100 BPM | D minor | Dark and purple | Tier 3 |
-| Midnight Merpati | 112 BPM | E minor | Smooth midnight drive | Tier 3 |
+| Coastline Run | 116 BPM | C major | Fast coastal highway | ✅ Tier 3 |
+| Orchid After Dark | 100 BPM | D minor | Dark and purple | ✅ Tier 3 |
+| Midnight Merpati | 112 BPM | E minor | Smooth midnight drive | ✅ Tier 3 |
 
 ## Ombak Lo-Fi — jazzy, swung
 
 | Song | Tempo | Key | Mood | Status |
 | --- | --- | --- | --- | --- |
 | Rain on Kemuning | 76 BPM | F major 7 | Rainy evening, vinyl crackle | ✅ Tier 2 |
-| Warung at 2AM | 82 BPM | Bb major 9 | Sleepy late-night food stall | Tier 3 |
-| Slow Waves | 72 BPM | Eb major 7 | Slow beach morning | Tier 3 |
+| Warung at 2AM | 82 BPM | Bb major 9 | Sleepy late-night food stall | ✅ Tier 3 |
+| Slow Waves | 72 BPM | Eb major 7 | Slow beach morning | ✅ Tier 3 |
 
 ## Gamelan Wave — pelog/slendro-inspired FM bells and gongs over electronic beats
 
 | Song | Tempo | Key | Mood | Status |
 | --- | --- | --- | --- | --- |
 | Bukit Asri Sunrise | 118 BPM | Pelog-ish | Bright interlocking bells | ✅ Tier 2 |
-| Pier 9 | 110 BPM | Slendro-ish | Dockside groove | Tier 3 |
-| Kecak Circuit | 124 BPM | Pelog-ish | Rhythmic vocal-like chops | Tier 3 |
+| Pier 9 | 110 BPM | Slendro-ish | Dockside groove | ✅ Tier 3 |
+| Kecak Circuit | 124 BPM | Pelog-ish | Rhythmic vocal-like chops | ✅ Tier 3 |
 
 ## Score
 
@@ -60,6 +60,10 @@ lead, arp, fx), and an arrangement. Nothing is a recording or a sample.
   off or during missions. ✅ Tier 2 — "Pursuit" (132 BPM, D minor) plays
   at 3+ stars and silences the radio until the heat dies down.
 - **Cutscene themes:** a warm theme for Mama Lin ✅ Tier 2 — "Lin's Theme"
-  (80 BPM, C major) plays in cutscenes; a dark theme for Viktor (Tier 3).
+  (80 BPM, C major) plays in cutscenes; a dark theme for Viktor ✅ Tier 3 —
+  "Viktor's Theme" (84 BPM, D minor, drone bass + tolling bell) plays
+  when Viktor speaks in the M6 boss cutscene, switching back to Lin's
+  theme on her lines.
 - **Stingers:** mission passed, mission failed, FLATLINED, CUFFED ✅ Tier 2.
-- **Credits song:** a full reprise of "Heat on the Coast" (Tier 3).
+- **Credits song:** a full reprise of "Heat on the Coast" ✅ Tier 3 —
+  plays once when the credits panel opens, then the title theme again.

@@ -52,10 +52,12 @@ export class WeaponSystem {
     this.onCharacterHit = null; // (char, damage, shooter) => void
     this.onPlayerHit = null; // (damage, shooter) => void
     this.onVehicleHit = null; // (vehicle, damage, shooter) => void
+    this.heli = null; // Rajawali (Tier 3), set by main.js
+    this.onHelicopterHit = null; // (heli, damage, shooter) => void
   }
 
   // One hitscan shot. Returns {kind, point, dist, target} where kind is
-  // 'wall' | 'char' | 'vehicle' | 'player' | 'none'.
+  // 'wall' | 'char' | 'vehicle' | 'heli' | 'player' | 'none'.
   fireHitscan(origin, dir, range, damage, shooter, opts = {}) {
     const [ox, oy, oz] = origin;
     const [dx, dy, dz] = dir;
@@ -99,6 +101,18 @@ export class WeaponSystem {
       }
     }
 
+    // Rajawali (Tier 3): a big slow target ~40 m up. The rotor disc
+    // makes the sphere generous — hitting the heli feels fair, and the
+    // damage() hook + falling logic already exist on the heli.
+    const h = this.heli;
+    if (h && h.active && !h.shotDown) {
+      const t = raySphere(ox, oy, oz, dx, dy, dz, h.x, h.y, h.z, 3.5);
+      if (t > 0 && t < bestDist) {
+        bestDist = t;
+        best = { kind: 'heli', point: [ox + dx * t, oy + dy * t, oz + dz * t], dist: t, target: h };
+      }
+    }
+
     // The player (for AI shooters).
     const p = opts.player;
     if (p && !p.dead && shooter !== p) {
@@ -111,6 +125,7 @@ export class WeaponSystem {
 
     if (best.kind === 'char' && this.onCharacterHit && !opts.dry) this.onCharacterHit(best.target, damage, shooter);
     if (best.kind === 'vehicle' && this.onVehicleHit && !opts.dry) this.onVehicleHit(best.target, damage, shooter);
+    if (best.kind === 'heli' && this.onHelicopterHit && !opts.dry) this.onHelicopterHit(best.target, damage, shooter);
     if (best.kind === 'player' && this.onPlayerHit && !opts.dry) this.onPlayerHit(damage, shooter);
     return best;
   }
