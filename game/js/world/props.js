@@ -122,6 +122,23 @@ export function umbrellaGeometry() {
   return g;
 }
 
+// Food cart (Tier 3, step 17): a street vendor's gerobak — wooden body,
+// a bright striped canopy on two poles, two wheels. Cheap (~30 tris),
+// so eight of them cost nothing and the night market reads at a glance.
+export function cartGeometry() {
+  const g = emptyGeometry();
+  box(g, 0, 0.7, 0, 1.7, 0.7, 0.9, [0.55, 0.38, 0.20]); // body
+  box(g, 0, 1.15, 0, 1.8, 0.08, 1.0, [0.65, 0.48, 0.26]); // counter top
+  cylinder(g, -0.8, 0.3, 0, 0.3, 0.3, 0.12, 8, [0.15, 0.15, 0.16]); // wheels
+  cylinder(g, 0.8, 0.3, 0, 0.3, 0.3, 0.12, 8, [0.15, 0.15, 0.16]);
+  cylinder(g, -0.7, 1.6, -0.35, 0.04, 0.04, 0.9, 5, [0.30, 0.30, 0.32]); // poles
+  cylinder(g, 0.7, 1.6, -0.35, 0.04, 0.04, 0.9, 5, [0.30, 0.30, 0.32]);
+  cylinder(g, -0.7, 1.6, 0.35, 0.04, 0.04, 0.9, 5, [0.30, 0.30, 0.32]);
+  cylinder(g, 0.7, 1.6, 0.35, 0.04, 0.04, 0.9, 5, [0.30, 0.30, 0.32]);
+  box(g, 0, 2.1, 0, 2.0, 0.06, 1.2, [0.95, 0.45, 0.30]); // canopy
+  return g;
+}
+
 export function billboardGeometry() {
   const g = emptyGeometry();
   box(g, 0, 4, 0, 0.6, 8, 0.6, [0.20, 0.20, 0.22]);

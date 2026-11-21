@@ -12,8 +12,8 @@ import { BLOCK, PITCH, HALF, GRID, streetCoord } from './roads.js';
 import {
   lampGeometry, leafTreeGeometry, palmGeometry, benchGeometry,
   binGeometry, hydrantGeometry, busStopGeometry, containerGeometry,
-  craneGeometry, boatGeometry, umbrellaGeometry, billboardGeometry,
-  fountainGeometry,
+  craneGeometry, boatGeometry, umbrellaGeometry, cartGeometry,
+  billboardGeometry, fountainGeometry,
 } from './props.js';
 
 const ROAD_HALF = 7; // half the road width: sidewalks start here
@@ -272,6 +272,24 @@ export function buildProps(renderer, city) {
   }
   renderer.createBatch('prop-fountain', fountainGeometry(), Math.max(1, fountains.length));
   fillInstances(renderer, 'prop-fountain', fountains);
+
+  // Food carts (Tier 3, step 17): a night-market row by the kedai, a
+  // couple at the ferry pier, two downtown. The kedai carts sit on the
+  // sidewalk outside the shop, clear of the building wall.
+  const carts = [];
+  const kedai = city.landmark('kedai');
+  if (kedai) {
+    const [kx, kz] = [kedai.x, kedai.z];
+    carts.push({ x: kx - 14, z: kz + 4, ry: Math.PI / 2, color: [0.95, 0.45, 0.30] });
+    carts.push({ x: kx - 14, z: kz - 4, ry: Math.PI / 2, color: [0.30, 0.70, 0.90] });
+    carts.push({ x: kx + 14, z: kz, ry: -Math.PI / 2, color: [0.95, 0.85, 0.25] });
+  }
+  carts.push({ x: -20, z: HALF + 14, ry: 0, color: [0.95, 0.45, 0.30] });
+  carts.push({ x: 24, z: HALF + 14, ry: Math.PI, color: [0.30, 0.70, 0.90] });
+  carts.push({ x: streetCoord(4) + 10, z: streetCoord(4) + 10, ry: 0, color: [0.95, 0.85, 0.25] });
+  carts.push({ x: streetCoord(6) - 10, z: streetCoord(3) + 10, ry: Math.PI / 2, color: [0.95, 0.45, 0.30] });
+  renderer.createBatch('prop-cart', cartGeometry(), carts.length);
+  fillInstances(renderer, 'prop-cart', carts);
 }
 
 export function buildWorld(renderer, city) {

@@ -27,6 +27,8 @@ export class HUD {
     this.stats = null; // Stats object, set by main.js
     this.showStats = false; // Tab toggles the stats screen
     this.interactPrompt = ''; // 'press E' hint near tags/shops (Tier 3)
+    this.scale = 1; // adaptive render scale, shown in the FPS readout
+    this.slowMo = false; // focus slow motion is active (Tier 3)
   }
 
   setBanner(text, sub, seconds = 3) {
@@ -90,11 +92,19 @@ export class HUD {
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     // The weather rides on the district line while it rains.
     ctx.fillText((this.district ?? '') + (this.weather === 'rain' ? ' — Rain' : ''), 16, 52);
-    // FPS counter, toggled with F3 (prompt section 2).
+    // FPS counter, toggled with F3 (prompt section 2). The adaptive
+    // render scale rides along so a soft frame is visibly explained.
     if (this.showFps) {
       ctx.font = '14px sans-serif';
       ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      ctx.fillText(`FPS ${this.fps ?? 0} · ${this.quality ?? ''}`, 16, 74);
+      ctx.fillText(`FPS ${this.fps ?? 0} · ${this.quality ?? ''} · ${this.scale ? this.scale.toFixed(1) + '×' : ''}`, 16, 74);
+    }
+    // Slow-motion indicator (Tier 3): gold, under the crosshair.
+    if (this.slowMo) {
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.fillStyle = 'rgba(255,210,63,0.95)';
+      ctx.fillText('FOCUS — SLOW MOTION', W / 2, H / 2 + 44);
     }
 
     // Top-right: money and wanted stars.

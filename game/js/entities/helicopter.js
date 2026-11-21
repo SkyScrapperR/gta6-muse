@@ -114,6 +114,7 @@ export class Helicopter {
       if (this.y <= 1) {
         this.w.particles.explosion(this.x, 0.5, this.z);
         this.w.sfx.explosion();
+        if (this.onExplode) this.onExplode();
         this.active = false;
       }
       return;

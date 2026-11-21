@@ -74,8 +74,18 @@ let fps = 0;
 // playtest cannot pass is worse than a slightly softer Low.
 let qualityDpr = 1.5;
 let renderScale = 1;
+let presetScale = 1; // the preset's render scale — the adaptive ceiling
 let currentQuality = 'medium';
 let showFps = false;
+// Camera shake (Tier 3, step 17): explosions and hits jolt the frame.
+let shakeT = 0;
+let shakeAmp = 0;
+function shake(amp) {
+  shakeAmp = Math.max(shakeAmp, amp);
+  shakeT = 0.35;
+}
+// Adaptive resolution (Tier 3, step 17): timer for the 2 s step below.
+let adaptT = 0;
 const QUALITY_KEY = 'selara-bay-quality-v1';
 function loadQuality() {
   try { return localStorage.getItem(QUALITY_KEY); } catch { return null; }
@@ -251,7 +261,8 @@ const game = {
   applyQuality(q) {
     const preset = q === 'low' ? 'low' : q === 'high' ? 'high' : 'medium';
     qualityDpr = preset === 'low' ? 1 : preset === 'high' ? 2 : 1.5;
-    renderScale = preset === 'low' ? 0.5 : 1;
+    presetScale = preset === 'low' ? 0.5 : 1;
+    renderScale = presetScale;
     currentQuality = preset;
     // Tier 2: shadow map size, post chain and light cap follow the
     // preset. Low renders direct (no shadow, no bloom, 12 lights in
@@ -338,7 +349,7 @@ function damageCharacter(c, dmg, shooter) {
 }
 
 weapons.onCharacterHit = (c, dmg, shooter) => damageCharacter(c, dmg, shooter);
-weapons.onPlayerHit = (dmg) => player.damage(dmg);
+weapons.onPlayerHit = (dmg) => { player.damage(dmg); shake(0.25); };
 weapons.onVehicleHit = (v, dmg) => v.damage(dmg);
 combatAI.onMemberDown = (m) => {
   stats.kills++;
@@ -363,6 +374,7 @@ pickups.onCollect = (kind, amount) => {
 vehicles.onWreck = (v) => {
   particles.explosion(v.x, 0.5, v.z);
   sfx.explosion();
+  shake(0.5);
   peds.fleeFrom(v.x, v.z, 40);
 };
 
@@ -457,6 +469,7 @@ const heli = new Helicopter({
   renderer, player, police, particles, sfx, weapons, lightRegistry, game,
 });
 police.heli = heli;
+heli.onExplode = () => shake(0.6);
 // Roadblocks (Tier 3): warn Kai when the police seal the road ahead.
 police.onRoadblock = () => {
   notifications.warning('Roadblock ahead — the cops sealed the road!');
@@ -492,7 +505,7 @@ if (shotName) {
 const PROP_BATCHES = [
   'prop-lamp', 'prop-tree', 'prop-palm', 'prop-bench', 'prop-bin',
   'prop-hydrant', 'prop-busstop', 'prop-crane', 'prop-boat',
-  'prop-umbrella', 'prop-billboard', 'prop-fountain',
+  'prop-umbrella', 'prop-billboard', 'prop-fountain', 'prop-cart',
 ];
 
 function frame(now) {
@@ -523,6 +536,33 @@ function frame(now) {
       }
     }
   }
+  // Adaptive resolution (Tier 3, step 17): every 2 s, step the render
+  // scale down when the machine struggles and back up when it recovers.
+  // The preset's scale is the ceiling; the floor is 0.4 (softer, still
+  // readable). Skipped while the first-run probe is deciding, and in
+  // shot mode — a screenshot must not change resolution mid-frame.
+  adaptT += realDt;
+  if (!probeActive && game.state !== 'shot' && adaptT >= 2) {
+    adaptT = 0;
+    if (fps > 0 && fps < 18 && renderScale > 0.4) {
+      renderScale = Math.max(0.4, Math.round((renderScale - 0.1) * 10) / 10);
+      resize();
+    } else if (fps > 40 && renderScale < presetScale) {
+      renderScale = Math.min(presetScale, Math.round((renderScale + 0.1) * 10) / 10);
+      resize();
+    }
+  }
+  // Camera shake decay (Tier 3, step 17).
+  if (shakeT > 0) {
+    shakeT -= realDt;
+    if (shakeT <= 0) shakeAmp = 0;
+  }
+  // Slow motion (Tier 3, step 17): hold Shift while aiming — "focus" —
+  // and the world runs at 0.35x so Kai can line up a shot. Only the
+  // simulation slows; the music and the HUD keep real time.
+  const slowMo = game.state === 'playing' && player.aiming && !player.inCar
+    && (input.isDown('ShiftLeft') || input.isDown('ShiftRight'));
+  const timeScale = slowMo ? 0.35 : 1;
   const t = now / 1000;
 
   // --- State keys. Esc exits pointer lock first in the browser, so P
@@ -597,17 +637,19 @@ function frame(now) {
   // In 'shot' mode the city simulates but Kai is posed by the shot.
   const simulating = game.state === 'playing' || game.state === 'title' || game.state === 'cutscene' || game.state === 'shot';
   if (simulating) {
+    // The slowed step for the whole simulation (slow motion, step 17).
+    const sdt = dt * timeScale;
     if (game.state === 'playing') {
-      player.update(dt, t, vehicles);
-      missions.update(dt, t);
-      combatAI.update(dt, t);
+      player.update(sdt, t, vehicles);
+      missions.update(sdt, t);
+      combatAI.update(sdt, t);
       // Stats (Tier 3): time on foot or wheels, and distance driven.
-      stats.timePlayed += dt;
-      if (player.inCar) stats.distanceDriven += Math.abs(player.inCar.speed) * dt;
+      stats.timePlayed += sdt;
+      if (player.inCar) stats.distanceDriven += Math.abs(player.inCar.speed) * sdt;
       // GPS refresh (Tier 2): keep the route attached to the player and
       // the live objective; a waypoint the player set wins over the
       // mission, and reaching it clears it.
-      gpsT += dt;
+      gpsT += sdt;
       if (gpsT > 1) {
         gpsT = 0;
         if (bigMap.waypoint) {
@@ -628,7 +670,7 @@ function frame(now) {
         }
       }
     // The clock advances: one game hour per four real minutes.
-      hour = (hour + dt / 240) % 24;
+      hour = (hour + sdt / 240) % 24;
       // Safehouse: press E near the marker to save.
       const sh = city.landmark('safehouse');
       if (!player.inCar && Math.hypot(player.x - sh.x, player.z - sh.z) < 8) {
@@ -656,22 +698,22 @@ function frame(now) {
         }
       }
     }
-    if (game.state === 'cutscene') cutscene.update(dt, input);
+    if (game.state === 'cutscene') cutscene.update(sdt, input);
     // In shot mode the gang keeps shooting, so tracers fly for the photo.
-    if (game.state === 'shot') combatAI.update(dt, t);
-    traffic.update(dt, t, player);
-    peds.update(dt, t, vehicles);
-    police.update(dt, t);
-    heli.update(dt, t);
-    particles.update(dt);
-    pickups.update(dt, t);
-    vehicles.update(dt, t);
-    charSystem.update(dt, t);
+    if (game.state === 'shot') combatAI.update(sdt, t);
+    traffic.update(sdt, t, player);
+    peds.update(sdt, t, vehicles);
+    police.update(sdt, t);
+    heli.update(sdt, t);
+    particles.update(sdt);
+    pickups.update(sdt, t);
+    vehicles.update(sdt, t);
+    charSystem.update(sdt, t);
     // Tier 2: weather and the visible traffic lights live in the same
     // simulation step as the traffic they belong to.
-    rain.update(dt, player.x, player.y + 2, player.z);
+    rain.update(sdt, player.x, player.y + 2, player.z);
     trafficLightMeshes.update(t);
-    side.update(dt); // Orchid tag bob (Tier 3)
+    side.update(sdt); // Orchid tag bob (Tier 3)
     // FLATLINED: a mission in progress fails; free roam wakes up at the
     // hospital after a beat on the ground.
     if (player.dead && !wasDead) {
@@ -686,7 +728,7 @@ function frame(now) {
     // forever after any mid-mission death (the mission stays failed until
     // the player presses Enter to retry).
     if (player.dead) {
-      deadT += dt;
+      deadT += sdt;
       if (deadT > 2.5) {
         deadT = 0;
         const hosp = city.landmark('hospital');
@@ -714,6 +756,17 @@ function frame(now) {
     : game.state === 'cutscene' && cutscene.camera ? cutscene.camera
     : game.state === 'shot' && shotInfo.camera ? shotInfo.camera
     : player.cameraForRender();
+  // Camera shake (Tier 3, step 17): replace the position array — never
+  // jitter it in place, because player.cameraForRender returns the live
+  // camPos array and the shake would accumulate into the camera.
+  if (shakeAmp > 0) {
+    const a = shakeAmp * Math.max(0, shakeT / 0.35);
+    camera.pos = [
+      camera.pos[0] + (Math.random() - 0.5) * a,
+      camera.pos[1] + (Math.random() - 0.5) * a,
+      camera.pos[2],
+    ];
+  }
   const palette = skyPalette(game.state === 'title' ? titleHour : hour);
 
   // Tier 2: night point lights. Statics (street lamps) are registered
@@ -791,6 +844,8 @@ function frame(now) {
   hud.fps = fps;
   hud.showFps = showFps;
   hud.quality = currentQuality;
+  hud.scale = renderScale; // adaptive resolution readout (Tier 3)
+  hud.slowMo = slowMo; // focus slow-motion indicator (Tier 3)
   minimap.searchCenter = police.searchCenter;
   hud.shop = side.shop; // the shop panel draws over the frozen game
   if (game.state === 'playing') {
@@ -851,6 +906,9 @@ window.__selara = {
   stats,
   side,
   get fps() { return fps; },
+  get renderScale() { return renderScale; },
+  get shakeAmp() { return shakeAmp; },
+  shake(amp) { shake(amp); },
   get hour() { return hour; },
   setHour(h) { hour = h; },
 };

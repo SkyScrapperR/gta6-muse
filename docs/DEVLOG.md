@@ -8,9 +8,9 @@ prompt, 21 Nov 10:12) before continuing.
 
 **Step 15 of 18: Checkpoint 2 — DONE 21 Nov ~12:49 WITA** (commit
 c054f5c; playtest 26/26, FPS + screenshots below). **Step 16 of 18
-(Tier 3): DONE 21 Nov ~13:30 WITA** (commit pending; probe 18/18
-below). Next: **step 17** — adaptive resolution, slow motion, extra
-props + feel tuning; then **step 18** (final checkpoint).
+(Tier 3): DONE 21 Nov ~13:30 WITA** (commit c012e27; probe 18/18).
+**Step 17 of 18 (Tier 3 polish): DONE 21 Nov ~14:00 WITA** (commit
+pending; probe 8/8 below). Next: **step 18** (final checkpoint).
 
 ## The main.ts contract (from the kit — step 1 revision)
 
@@ -455,6 +455,43 @@ money path $5,550 after M6 → $5,450 death → $5,350 arrest).
   hit-marker miss was the probe aiming with the default downward
   pitch instead of levelling the camera (`camPitch = 0`).
 
+## Step 17 (Tier 3 polish, this session) — DONE 21 Nov ~14:00 WITA
+
+- **Adaptive resolution:** every 2 s the render scale steps down
+  0.1 when fps < 18 and back up when fps > 40; the preset's scale
+  is the ceiling (Low 0.5, Medium/High 1.0), the floor is 0.4.
+  Skipped while the first-run probe is deciding and in shot mode
+  (a screenshot must not change resolution mid-frame). The scale
+  shows in the F3 readout (`FPS 2 · low · 0.4×`). Probe: on this
+  machine it steps Low 0.5 → 0.4 within seconds. Recovery
+  (fps > 40 → scale back up) cannot be measured on SwiftShader —
+  verified by reading only.
+- **Slow motion ("focus"):** hold Shift while aiming and the whole
+  simulation runs at 0.35× — the music and HUD keep real time.
+  Implemented as `sdt = dt * timeScale` for the simulation block
+  only (player, missions, combat, traffic, peds, police, heli,
+  particles, pickups, vehicles, chars, rain, tags, clock, death
+  timer). The HUD shows a gold "FOCUS — SLOW MOTION" label under
+  the crosshair. Probe: `timePlayed` advances 1.3 → 0.48 over
+  equal 4 s windows (ratio 0.37 ≈ 0.35).
+- **Camera shake:** explosions and hits jolt the frame — wreck
+  0.5, heli explosion 0.6, player hit 0.25, decaying over 0.35 s.
+  The jitter replaces `camera.pos` (never in place — the player's
+  `cameraForRender` returns the live `camPos` array and the shake
+  would accumulate into it). `heli.onExplode` callback added for
+  the helicopter's ground explosion.
+- **Extra props:** 7 food carts (gerobak — wooden body, bright
+  canopy, two wheels, ~30 tris each) — a night-market row by the
+  kedai, two at the ferry pier, two downtown. New `prop-cart`
+  batch in `buildProps` + `PROP_BATCHES`.
+- **Probe:** `tools/probe-step17.mjs` **8/8 PASS, 0 console
+  errors** (log `~/workspace/probe-step17-run2.log`, ~33 s): 7
+  carts rendered, adaptive scale 0.5 → 0.4, slow-mo ratio,
+  HUD slow-mo on/off, wreck shake + decay, game still running.
+  Run 1 was 5/8 — the slow-mo failures were the probe setting
+  `player.aiming` directly (player.update overwrites it from the
+  mouse every frame); the real right mouse button fixed it.
+
 ## Open bugs / known gaps
 
 - **Playtest: 26/26 PASS, 0 console errors** (Checkpoint 2, 21 Nov
@@ -476,12 +513,12 @@ money path $5,550 after M6 → $5,450 death → $5,350 arrest).
   machine limit, stated plainly. On a real GPU the same presets
   will run far faster; High is the screenshot quality and does not
   need real-time FPS.
-- **Checkpoint 2 done (step 15). Step 16 done (Tier 3 core).**
-  Next: step 17 (adaptive resolution, slow motion, extra props +
-  feel tuning), then step 18 (final checkpoint).
-- **Tier 3 remaining:** adaptive resolution (MISSING), slow motion
-  (MISSING), extra props + feel tuning. Hit markers verified
-  wired (probe-step16 18/18). Soundtrack, roadblocks, heli
+- **Checkpoint 2 done (step 15). Step 16 done (Tier 3 core).
+  Step 17 done (polish).** Next: step 18 (final checkpoint).
+- **Tier 3 remaining:** only the final checkpoint (step 18) —
+  main.ts re-verification, full playtest + FPS, final
+  screenshots, README gallery. Adaptive resolution, slow motion,
+  hit markers, food carts, soundtrack, roadblocks, heli
   shoot-down, tags, respray, gun shop, stats screen all DONE and
   probed.
 - **Screenshots:** 4 retaken at Checkpoint 2 on High 1280×720
@@ -506,6 +543,8 @@ money path $5,550 after M6 → $5,450 death → $5,350 arrest).
   runs ~5× slower than real time at ~2 fps in SwiftShader).
 - `node tools/probe-step16.mjs` (headed Chrome, Xvfb :99) — expect
   18/18 PASS, 0 errors (~55 s; log `~/workspace/probe-step16-run3.log`).
+- `node tools/probe-step17.mjs` (headed Chrome, Xvfb :99) — expect
+  8/8 PASS, 0 errors (~35 s; log `~/workspace/probe-step17-run2.log`).
 - `MAKEFUN_OUTPUT_DIR=<dir> node main.ts` twice — exit 0, ≤ 10 s,
   byte-identical output.
 - `node tools/fpsdiag.mjs` — FPS per preset, headed Chrome.
