@@ -6,9 +6,12 @@ prompt, 21 Nov 10:12) before continuing.
 
 ## Current step
 
-**Step 14 of 18: Tier 2 — DONE 21 Nov ~12:05 WITA.** Steps 11–14
+**Step 14 of 18: Tier 2 — DONE 21 Nov ~11:18 WITA** (commit 9015564; the
+earlier "~12:05" timestamp here was wrong, fixed 21 Nov ~11:40 by the
+continuation agent after re-running the probe). Steps 11–14
 landed (see below) and are verified by `tools/probe-step14.mjs`
-**15/15 PASS, 0 console errors**. Next: **Checkpoint 2 (step 15)** —
+**15/15 PASS, 0 console errors** (re-run 21 Nov ~11:38, log
+`~/workspace/probe-step14-rerun.log`). Next: **Checkpoint 2 (step 15)** —
 full playtest on Low + FPS per preset + retake the 4 screenshots on
 High (visuals changed materially) + this log, then Tier 3 (16–18).
 
