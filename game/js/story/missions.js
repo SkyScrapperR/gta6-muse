@@ -393,15 +393,26 @@ const MISSIONS = [
       {
         objective: 'Get in a car — Dex is getting in', type: 'dex-in',
         target: (m) => [m.dex.x, m.dex.z], radius: 10,
-        check: (m) => {
+        // A real pickup: Dex walks over to Kai's car and climbs in when
+        // he reaches the door. He waits on the sidewalk until Kai is in
+        // a car, and follows it if Kai stops somewhere else nearby.
+        check: (m, dt) => {
           if (m.dexInCar) return true;
           const p = m.w.player;
-          if (p.inCar && Math.hypot(p.x - m.dex.x, p.z - m.dex.z) < 8) {
+          if (!p.inCar || !m.dex) return false;
+          const d = Math.hypot(p.x - m.dex.x, p.z - m.dex.z);
+          if (d < 4) {
             m.dexInCar = true;
             m.w.charSystem.remove(m.dex);
             m.w.notifications.info('Dex is in the car. Drive!');
             return true;
           }
+          const step = Math.min(d, 4.5 * (dt ?? 0.016));
+          m.dex.x += ((p.x - m.dex.x) / d) * step;
+          m.dex.z += ((p.z - m.dex.z) / d) * step;
+          m.dex.heading = Math.atan2(p.x - m.dex.x, p.z - m.dex.z);
+          m.dex.pose = 'walk';
+          m.dex.speed = 4.5;
           return false;
         },
       },

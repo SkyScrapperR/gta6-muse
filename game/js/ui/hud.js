@@ -69,6 +69,12 @@ export class HUD {
     ctx.font = '14px sans-serif';
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.fillText(this.district ?? '', 16, 52);
+    // FPS counter, toggled with F3 (prompt section 2).
+    if (this.showFps) {
+      ctx.font = '14px sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.fillText(`FPS ${this.fps ?? 0} · ${this.quality ?? ''}`, 16, 74);
+    }
 
     // Top-right: money and wanted stars.
     ctx.textAlign = 'right';

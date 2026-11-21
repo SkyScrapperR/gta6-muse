@@ -1,11 +1,11 @@
 # SELARA BAY
 
-[![gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/c/gta6-01)
-[![rank](https://make.fun/badge/gta6-01/SkyScrapperR/selara-bay-final-entry/rank.svg)](https://make.fun/c/gta6-01)
-[![reward](https://make.fun/badge/gta6-01/SkyScrapperR/selara-bay-final-entry/reward.svg)](https://make.fun/c/gta6-01)
+[![gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01)
+[![rank](https://make.fun/badge/gta6-01/SkyScrapperR/gta6-muse/rank.svg)](https://make.fun/bounty/gta6-01)
+[![reward](https://make.fun/badge/gta6-01/SkyScrapperR/gta6-muse/reward.svg)](https://make.fun/bounty/gta6-01)
 
 **SELARA BAY** — *"Heat on the Coast"* — is an original 3D open-world crime
-game built for the [make.fun gta6-01 bounty](https://make.fun/c/gta6-01).
+game built for the [make.fun gta6-01 bounty](https://make.fun/bounty/gta6-01).
 Kai Santoso returns to the coastal city of Selara Bay after five years away
 and finds the Black Orchid syndicate squeezing the coast. Drive, fight, and
 outrun the law across six story missions, or just cruise the city: steal cars,
@@ -36,14 +36,13 @@ offline from static files.
 | Mouse | Orbit camera (pointer lock); aim with right mouse |
 | Shift | Sprint |
 | Space | Jump / handbrake in a car |
-| Left mouse | Punch / shoot / drive-by |
-| Q / E or wheel | Switch weapon |
-| R | Reload / radio station in a car |
+| Left mouse | Punch / shoot |
+| 1 / 2 / 3 / 4 | Fists / Kobra 9 / Wasp SMG / Thunder shotgun |
+| R | Reload |
 | F | Enter or exit a car |
-| H | Horn |
+| E | Save at the safehouse |
 | M | Big map (click to set a waypoint) |
-| Esc | Pause |
-| F3 | FPS counter |
+| Esc / P | Pause |
 
 ## Missions
 
@@ -54,8 +53,9 @@ offline from static files.
 5. **Low Tide** — night raid on Orchid Freight: six guards and a weapons truck.
 6. **Orchid Falls** — chase Viktor Raza to the east pier and finish him at sunrise.
 
-Plus 12 Orchid tags to collect, a respray shop, a gun shop, and a wanted
-system from 0 to 5 stars with police cars, foot cops, and a helicopter.
+Plus a wanted system from 0 to 5 stars with police cars and foot cops.
+Coming next: 12 Orchid tags to collect, a respray shop, a gun shop, a
+police helicopter, and rain.
 
 ## Screenshots
 
@@ -69,11 +69,10 @@ system from 0 to 5 stars with police cars, foot cops, and a helicopter.
 The engine is a custom WebGL2 renderer in `game/js/engine/`, written from
 scratch for this game:
 
-- **Frame graph:** directional shadow pass, opaque pass, transparent pass,
-  then a post chain (bloom, auto-exposure, ACES tone mapping, vignette).
-- **Lighting:** sun/moon plus hemisphere ambient, per-instance colour,
-  emissive windows and neon, and a forward list of the nearest night lights
-  (streetlights, headlights, taillights, lightbars, helicopter spotlight).
+- **Rendering:** instanced batches with frustum culling, a directional sun
+  plus hemisphere ambient, per-instance colour, emissive windows and neon,
+  and a filmic tone curve. Shadows, a post chain (bloom, auto-exposure,
+  ACES), and a forward night-light list arrive in the next pass.
 - **World:** the city is generated from a seeded layout — 10×10 blocks across
   five districts — and merged into chunked static meshes with instancing and
   frustum culling. All geometry is procedural; all audio is synthesised with
@@ -87,9 +86,10 @@ scratch for this game:
 
 ## Soundtrack
 
-All music is synthesised live with Web Audio — see [MUSIC.md](MUSIC.md) for
-every song, its tempo, key, and mood. Three radio stations play in cars:
-Selara Nights FM (synthwave), Ombak Lo-Fi, and Gamelan Wave.
+All sound effects are synthesised live with Web Audio — see
+[MUSIC.md](MUSIC.md) for the soundtrack plan. The full soundtrack (three
+radio stations: Selara Nights FM, Ombak Lo-Fi, and Gamelan Wave) arrives
+with the music pass.
 
 ## License
 

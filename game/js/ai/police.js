@@ -19,6 +19,7 @@ export class PoliceSystem {
     this.loseT = 0;
     this.time = 0;
     this.searchCenter = null; // last seen position, for the minimap
+    this.huntTarget = null; // where the cops drive: last seen, not live pos
     this.copCars = []; // {v, repathT, ramT}
     this.footCops = []; // {c, punchT}
     this.dropT = 0;
@@ -63,7 +64,10 @@ export class PoliceSystem {
 
   repathCop(c) {
     const from = nearestNode(c.v.x, c.v.z);
-    const to = nearestNode(this.player.x, this.player.z);
+    // Hunt the last place Kai was SEEN, never his live position: the
+    // spec says police update your position only with line of sight.
+    const [hx, hz] = this.huntTarget ?? [this.player.x, this.player.z];
+    const to = nearestNode(hx, hz);
     const route = findRoute(from, to);
     if (route.length >= 2) {
       c.v.route = routeWaypoints(route);
@@ -101,6 +105,40 @@ export class PoliceSystem {
     const p = this.player;
 
     if (this.wanted > 0 && !p.dead) {
+      // Line of sight FIRST, on the current positions: do the cops see
+      // Kai right now? Everything below hunts the answer, not Kai.
+      // Sight radii are short on purpose: a cop car a block away cannot
+      // keep eyes on Kai through the streets, so hopping between covered
+      // Bukit spots actually breaks the chase and the heat can cool.
+      let seen = false;
+      for (const c of this.copCars) {
+        if (Math.hypot(p.x - c.v.x, p.z - c.v.z) > 60) continue;
+        if (this.city.collision.hasLineOfSight(c.v.x, c.v.z, p.x, p.z)) { seen = true; break; }
+      }
+      if (!seen) {
+        for (const fc of this.footCops) {
+          if (Math.hypot(p.x - fc.c.x, p.z - fc.c.z) > 35) continue;
+          if (this.city.collision.hasLineOfSight(fc.c.x, fc.c.z, p.x, p.z)) { seen = true; break; }
+        }
+      }
+      if (seen) {
+        this.loseT = 0;
+        this.searchCenter = [p.x, p.z];
+      } else {
+        this.loseT += dt;
+        if (this.loseT > 10 + this.wanted * 2) {
+          this.wanted--;
+          this.loseT = 0;
+          if (this.wanted === 0) this.searchCenter = null;
+        }
+      }
+      // Cops navigate to the last place they saw Kai. While he is seen
+      // that is his live position; once he breaks line of sight they
+      // drive to the stale spot and search there — which is what makes
+      // hiding actually lose the heat.
+      const hunt = seen ? [p.x, p.z] : (this.searchCenter ?? [p.x, p.z]);
+      this.huntTarget = hunt;
+
       // Keep the right number of patrol cars on the street.
       const wantCars = Math.min(1 + Math.floor(this.wanted / 2), 4);
       while (this.copCars.length < wantCars) this.spawnCopCar();
@@ -136,22 +174,25 @@ export class PoliceSystem {
         if (dPlayer > 400) this.removeCopCar(i);
       }
 
-      // Foot cops: run Kai down.
+      // Foot cops: run Kai down — or to the last place they saw him.
       for (let i = this.footCops.length - 1; i >= 0; i--) {
         const fc = this.footCops[i];
         const c = fc.c;
-        const dx = p.x - c.x, dz = p.z - c.z;
+        const tx = seen ? p.x : hunt[0];
+        const tz = seen ? p.z : hunt[1];
+        const dx = tx - c.x, dz = tz - c.z;
         const d = Math.hypot(dx, dz);
-        if (d > 120) { this.removeFootCop(i); continue; }
+        const dPlayer = Math.hypot(p.x - c.x, p.z - c.z);
+        if (dPlayer > 120) { this.removeFootCop(i); continue; }
         c.heading = Math.atan2(dx, dz);
-        c.speed = 5;
-        c.pose = 'run';
         if (d > 1.6) {
+          c.speed = 5;
+          c.pose = 'run';
           const nx = c.x + Math.sin(c.heading) * c.speed * dt;
           const nz = c.z + Math.cos(c.heading) * c.speed * dt;
           const resolved = this.city.collision.resolveCircle(nx, nz, 0.4);
           c.x = resolved.x; c.z = resolved.z;
-        } else if (!p.inCar) {
+        } else if (!p.inCar && dPlayer <= 1.6) {
           fc.punchT -= dt;
           if (this.wanted === 1) {
             if (this.onArrest) this.onArrest();
@@ -161,30 +202,10 @@ export class PoliceSystem {
             c.pose = 'punch';
             p.damage(6);
           }
-        }
-      }
-
-      // Line of sight: seen by any cop car or foot cop?
-      let seen = false;
-      for (const c of this.copCars) {
-        if (Math.hypot(p.x - c.v.x, p.z - c.v.z) > 90) continue;
-        if (this.city.collision.hasLineOfSight(c.v.x, c.v.z, p.x, p.z)) { seen = true; break; }
-      }
-      if (!seen) {
-        for (const fc of this.footCops) {
-          if (Math.hypot(p.x - fc.c.x, p.z - fc.c.z) > 50) continue;
-          if (this.city.collision.hasLineOfSight(fc.c.x, fc.c.z, p.x, p.z)) { seen = true; break; }
-        }
-      }
-      if (seen) {
-        this.loseT = 0;
-        this.searchCenter = [p.x, p.z];
-      } else {
-        this.loseT += dt;
-        if (this.loseT > 10 + this.wanted * 2) {
-          this.wanted--;
-          this.loseT = 0;
-          if (this.wanted === 0) this.searchCenter = null;
+        } else {
+          // Reached the search spot and Kai is not here: stand and look.
+          c.speed = 0;
+          c.pose = 'idle';
         }
       }
     } else {

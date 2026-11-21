@@ -181,6 +181,14 @@ export class Player {
       this.camDist += (9 - this.camDist) * Math.min(1, dt * 4);
       // The car drives; Kai sits. The vehicle module moves us.
       this.inCar.drive(dt, this.input, this);
+      if (!this.inCar) {
+        // Stepped out this frame (F): drive() called exitCar(), so the
+        // seat/camera lines below would read null and throw — and a throw
+        // inside the frame loop used to freeze the whole game. Refresh
+        // the camera and let the on-foot section run next frame.
+        this.updateCamera(dt);
+        return;
+      }
       this.x = this.inCar.x;
       this.z = this.inCar.z;
       this.heading = this.inCar.heading;

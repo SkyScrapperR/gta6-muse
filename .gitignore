@@ -1,4 +1,21 @@
+# Dependencies and lockfiles. Never commit package-lock.json: it is
+# thousands of unwritten lines and counts against authorship.
 node_modules/
+package-lock.json
+
+# Build / program output.
 out/
-.DS_Store
+
+# Playwright / test artifacts.
+test-results/
+playwright-report/
+
+# Logs and local environment.
 *.log
+.env*
+
+# Tool caches.
+.cache/
+
+# OS files.
+.DS_Store

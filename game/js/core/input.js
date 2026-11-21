@@ -26,7 +26,7 @@ export class Input {
     this.locked = false;
 
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Tab') e.preventDefault();
+      if (e.code === 'Tab' || e.code === 'F3') e.preventDefault();
       if (!e.repeat) this.pressedKeys.add(e.code);
       this.keys.add(e.code);
     });

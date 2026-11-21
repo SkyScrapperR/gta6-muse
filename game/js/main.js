@@ -30,6 +30,7 @@ import { SaveSystem } from './save.js';
 import { Sfx } from './audio/sfx.js';
 import { CutscenePlayer } from './story/cutscene.js';
 import { MissionSystem } from './story/missions.js';
+import { setupShot } from './debug/shots.js';
 import { makeRng, rngInt } from './core/math.js';
 
 const glCanvas = document.getElementById('gl');
@@ -46,12 +47,32 @@ let lastTime = performance.now();
 let fpsFrames = 0;
 let fpsTime = 0;
 let fps = 0;
+// Quality presets (prompt section 2): Low renders at ~0.6 scale with no
+// shadow/bloom and 12 lights; Medium at full scale with 1024^2 shadows,
+// half-resolution bloom and 24 lights; High is the full look and the
+// screenshot quality. The shadow/bloom/light counts apply once those
+// systems land in Tier 2; the render scale applies now. Never lower the
+// High visuals to fit a weak machine — scale with the preset instead.
 let qualityDpr = 1.5;
+let renderScale = 1;
+let currentQuality = 'medium';
+let showFps = false;
+const QUALITY_KEY = 'selara-bay-quality-v1';
+function loadQuality() {
+  try { return localStorage.getItem(QUALITY_KEY); } catch { return null; }
+}
+function saveQuality(q) {
+  try { localStorage.setItem(QUALITY_KEY, q); } catch { /* storage blocked: keep running */ }
+}
+// First-run FPS probe: runs only when no quality choice is saved yet.
+let probeActive = !loadQuality();
+let probeFrames = 0;
+let probeTime = 0;
 
 function resize() {
   const w = window.innerWidth;
   const h = window.innerHeight;
-  renderer.resize(w, h, Math.min(window.devicePixelRatio || 1, qualityDpr));
+  renderer.resize(w, h, Math.min(window.devicePixelRatio || 1, qualityDpr) * renderScale);
   hudCanvas.width = w;
   hudCanvas.height = h;
 }
@@ -164,14 +185,27 @@ const game = {
     menus.show('title');
   },
   applyQuality(q) {
-    qualityDpr = q === 'low' ? 1 : q === 'high' ? 2 : 1.5;
+    const preset = q === 'low' ? 'low' : q === 'high' ? 'high' : 'medium';
+    qualityDpr = preset === 'low' ? 1 : preset === 'high' ? 2 : 1.5;
+    renderScale = preset === 'low' ? 0.6 : 1;
+    currentQuality = preset;
+    saveQuality(preset);
+    // Keep the Settings select showing the preset that is actually on.
+    const sel = document.getElementById('setting-quality');
+    if (sel) sel.value = preset;
     resize();
   },
+  get quality() { return currentQuality; },
+  get showFps() { return showFps; },
   setVolume(kind, v) { sfx.setVolume(kind, v); },
 };
 const menus = new Menus(game);
 menus.setHasSave(save.hasSave());
 menus.show('title');
+// A saved quality choice wins over the Settings default; with no saved
+// choice the 2-second probe in frame() picks one for this machine.
+const savedQuality = loadQuality();
+if (savedQuality) game.applyQuality(savedQuality);
 
 // Cinematic camera for the title screen: a slow low orbit over the city.
 function titleCamera(t) {
@@ -302,8 +336,6 @@ player.onPunch = () => {
   }
 };
 
-// --- Story: cutscenes and the six missions. (After the combat systems,
-// which the missions depend on.) ---
 const cutscene = new CutscenePlayer(city.collision);
 const missions = new MissionSystem({
   renderer, player, vehicles, combatAI, police, pickups, city,
@@ -312,6 +344,19 @@ const missions = new MissionSystem({
   setHour: (h) => { hour = h; },
 });
 
+// --- Screenshot scenes (?shot=title|chase|cutscene|docks). ---
+let shotInfo = { camera: null, hud: false, cutscene: false };
+const shotName = new URLSearchParams(location.search).get('shot');
+if (shotName) {
+  shotInfo = setupShot(shotName, {
+    renderer, player, vehicles, combatAI, police, pickups, city,
+    minimap, hud, notifications, sfx, save, cutscene, charSystem,
+    peds, traffic, game, pierCar, missions,
+    setHour: (h) => { hour = h; },
+  });
+  menus.hideAll();
+}
+
 const PROP_BATCHES = [
   'prop-lamp', 'prop-tree', 'prop-palm', 'prop-bench', 'prop-bin',
   'prop-hydrant', 'prop-busstop', 'prop-crane', 'prop-boat',
@@ -319,6 +364,9 @@ const PROP_BATCHES = [
 ];
 
 function frame(now) {
+  // Schedule the next frame FIRST: if anything below throws, the game
+  // logs the error and keeps running instead of freezing forever.
+  requestAnimationFrame(frame);
   const realDt = (now - lastTime) / 1000;
   const dt = Math.min(realDt, 0.1);
   lastTime = now;
@@ -328,6 +376,20 @@ function frame(now) {
     fps = Math.round(fpsFrames / fpsTime);
     fpsFrames = 0;
     fpsTime = 0;
+  }
+  // First-run preset probe: measure the real frame rate for 2 s on the
+  // title screen and pick a preset that fits this machine. A choice saved
+  // meanwhile (Settings, playtest, screenshot tool) wins over the probe.
+  if (probeActive) {
+    probeFrames++;
+    probeTime += realDt;
+    if (probeTime >= 2) {
+      probeActive = false;
+      const probeFps = probeFrames / probeTime;
+      if (!loadQuality()) {
+        game.applyQuality(probeFps < 25 ? 'low' : probeFps < 45 ? 'medium' : 'high');
+      }
+    }
   }
   const t = now / 1000;
 
@@ -345,6 +407,8 @@ function frame(now) {
       bigMap.open = false;
     }
   }
+  // F3 toggles the FPS counter (prompt section 2).
+  if (input.pressed('F3')) showFps = !showFps;
   if (input.pressed('KeyM') && (game.state === 'playing' || game.state === 'map')) {
     if (game.state === 'playing') {
       game.state = 'map';
@@ -372,7 +436,8 @@ function frame(now) {
   // --- Simulation. The city stays alive behind the title screen and
   // during cutscenes; the game freezes while paused or while the map is
   // open. Combat freezes during cutscenes so nobody shoots Kai mid-line.
-  const simulating = game.state === 'playing' || game.state === 'title' || game.state === 'cutscene';
+  // In 'shot' mode the city simulates but Kai is posed by the shot.
+  const simulating = game.state === 'playing' || game.state === 'title' || game.state === 'cutscene' || game.state === 'shot';
   if (simulating) {
     if (game.state === 'playing') {
       player.update(dt, t, vehicles);
@@ -394,6 +459,8 @@ function frame(now) {
       }
     }
     if (game.state === 'cutscene') cutscene.update(dt, input);
+    // In shot mode the gang keeps shooting, so tracers fly for the photo.
+    if (game.state === 'shot') combatAI.update(dt, t);
     traffic.update(dt, t, player);
     peds.update(dt, t, vehicles);
     police.update(dt, t);
@@ -408,7 +475,11 @@ function frame(now) {
       if (missions.active) missions.onPlayerDeath();
     }
     wasDead = player.dead;
-    if (player.dead && !missions.failed) {
+    // The player wakes up at the hospital even when the death failed a
+    // mission: gating this on !missions.failed left Kai dead on the ground
+    // forever after any mid-mission death (the mission stays failed until
+    // the player presses Enter to retry).
+    if (player.dead) {
       deadT += dt;
       if (deadT > 2.5) {
         deadT = 0;
@@ -435,6 +506,7 @@ function frame(now) {
   const titleHour = 18.2;
   const camera = game.state === 'title' ? titleCamera(t)
     : game.state === 'cutscene' && cutscene.camera ? cutscene.camera
+    : game.state === 'shot' && shotInfo.camera ? shotInfo.camera
     : player.cameraForRender();
   const palette = skyPalette(game.state === 'title' ? titleHour : hour);
 
@@ -459,6 +531,9 @@ function frame(now) {
   hud.hour = game.state === 'title' ? titleHour : hour;
   hud.district = city.districtNameAt(player.x, player.z);
   hud.inCutscene = game.state === 'cutscene';
+  hud.fps = fps;
+  hud.showFps = showFps;
+  hud.quality = currentQuality;
   minimap.searchCenter = police.searchCenter;
   if (game.state === 'playing') {
     hud.draw(dt);
@@ -466,6 +541,8 @@ function frame(now) {
     // Cinematic: clear the HUD, then letterbox + subtitles only.
     hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
     cutscene.draw(hudCtx, hudCanvas.width, hudCanvas.height);
+  } else if (game.state === 'shot' && shotInfo.hud) {
+    hud.draw(dt);
   } else {
     hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
   }
@@ -474,8 +551,6 @@ function frame(now) {
   }
   sfx.update(camera, player, police.copCars);
   input.endFrame();
-
-  requestAnimationFrame(frame);
 }
 
 requestAnimationFrame(frame);
@@ -507,6 +582,7 @@ window.__selara = {
   cutscene,
   missions,
   pierCar,
+  charSystem,
   get fps() { return fps; },
   get hour() { return hour; },
   setHour(h) { hour = h; },

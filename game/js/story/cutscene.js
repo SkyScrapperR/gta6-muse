@@ -85,9 +85,9 @@ export class CutscenePlayer {
       altPos = [mx - px * 7, 3.2, mz - pz * 7];
       fov = 55;
     } else if (shot === 'close-a' || shot === 'close-b') {
-      // Side close-up: the camera sits to the side of the speaker, so the
-      // face is in 3/4 profile and the background is the street and sky,
-      // never a building wall. The listener stands beside them.
+      // Side close-up: the camera sits to the side of the speaker, a touch
+      // in front, so the face is in 3/4 profile and the background is the
+      // street and sky, never a building wall. The listener stands beside.
       const c = subject;
       const o = other ?? { x: c.x + 2, z: c.z };
       const dx = o.x - c.x, dz = o.z - c.z;
@@ -95,8 +95,8 @@ export class CutscenePlayer {
       const fx = dx / len, fz = dz / len;
       const px = -fz, pz = fx;
       target = [c.x, 1.45, c.z];
-      pos = [c.x + px * 3.5 - fx * 0.5, 1.7, c.z + pz * 3.5 - fz * 0.5];
-      altPos = [c.x - px * 3.5 - fx * 0.5, 1.7, c.z - pz * 3.5 - fz * 0.5];
+      pos = [c.x + px * 3.5 + fx * 0.5, 1.7, c.z + pz * 3.5 + fz * 0.5];
+      altPos = [c.x - px * 3.5 + fx * 0.5, 1.7, c.z - pz * 3.5 + fz * 0.5];
       fov = 50;
     } else {
       // Wide on a single character (narrator): low and close, the
