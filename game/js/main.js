@@ -28,6 +28,8 @@ import { BigMap } from './ui/bigmap.js';
 import { Menus } from './ui/menus.js';
 import { SaveSystem } from './save.js';
 import { Sfx } from './audio/sfx.js';
+import { CutscenePlayer } from './story/cutscene.js';
+import { MissionSystem } from './story/missions.js';
 import { makeRng, rngInt } from './core/math.js';
 
 const glCanvas = document.getElementById('gl');
@@ -128,13 +130,21 @@ const game = {
     player.spawn(pier.x, pier.z, Math.PI);
     police.clearWanted();
     combatAI.clear();
+    missions.completedIds = [];
+    missions.nextMissionT = 0;
     this.state = 'playing';
     menus.hideAll();
     notifications.mission('Welcome back to Selara Bay, Kai.');
+    missions.startMission(0);
   },
   continueGame() {
     sfx.ensure();
-    save.load();
+    const data = save.load();
+    if (data) {
+      missions.completedIds = data.missions ?? [];
+      const next = missions.completedIds.length;
+      if (next < 6) missions.startMission(next);
+    }
     this.state = 'playing';
     menus.hideAll();
     notifications.info('Welcome back, Kai.');
@@ -292,6 +302,16 @@ player.onPunch = () => {
   }
 };
 
+// --- Story: cutscenes and the six missions. (After the combat systems,
+// which the missions depend on.) ---
+const cutscene = new CutscenePlayer(city.collision);
+const missions = new MissionSystem({
+  renderer, player, vehicles, combatAI, police, pickups, city,
+  minimap, hud, notifications, sfx, save, cutscene, charSystem,
+  peds, traffic, game, pierCar,
+  setHour: (h) => { hour = h; },
+});
+
 const PROP_BATCHES = [
   'prop-lamp', 'prop-tree', 'prop-palm', 'prop-bench', 'prop-bin',
   'prop-hydrant', 'prop-busstop', 'prop-crane', 'prop-boat',
@@ -335,6 +355,8 @@ function frame(now) {
       bigMap.open = false;
     }
   }
+  // Retry a failed mission with Enter.
+  if (missions.failed && input.pressed('Enter')) missions.retry();
   // Click on the big map to set a waypoint.
   if (game.state === 'map' && input.pressedLeft()) {
     const wp = bigMap.clickToWorld(input.mouseX, input.mouseY, hudCanvas.width, hudCanvas.height);
@@ -347,12 +369,15 @@ function frame(now) {
   // Click the 3D view to lock the pointer while playing.
   if (game.state === 'playing' && input.pressedLeft()) input.requestLock();
 
-  // --- Simulation. The city stays alive behind the title screen; the
-  // game freezes while paused or while the map is open. ---
-  const simulating = game.state === 'playing' || game.state === 'title';
+  // --- Simulation. The city stays alive behind the title screen and
+  // during cutscenes; the game freezes while paused or while the map is
+  // open. Combat freezes during cutscenes so nobody shoots Kai mid-line.
+  const simulating = game.state === 'playing' || game.state === 'title' || game.state === 'cutscene';
   if (simulating) {
     if (game.state === 'playing') {
       player.update(dt, t, vehicles);
+      missions.update(dt, t);
+      combatAI.update(dt, t);
       // The clock advances: one game hour per four real minutes.
       hour = (hour + dt / 240) % 24;
       // Safehouse: press E near the marker to save.
@@ -360,28 +385,30 @@ function frame(now) {
       if (!player.inCar && Math.hypot(player.x - sh.x, player.z - sh.z) < 8) {
         hud.objectiveSub = 'Safehouse — press E to save';
         if (input.pressed('KeyE')) {
-          save.save();
+          save.save({ missions: missions.completedIds });
           notifications.success('Game saved at the safehouse');
           sfx.pickup();
         }
-      } else {
+      } else if (!missions.active) {
         hud.objectiveSub = '';
       }
     }
+    if (game.state === 'cutscene') cutscene.update(dt, input);
     traffic.update(dt, t, player);
     peds.update(dt, t, vehicles);
     police.update(dt, t);
-    combatAI.update(dt, t);
     particles.update(dt);
     pickups.update(dt, t);
     vehicles.update(dt, t);
     charSystem.update(dt, t);
-    // FLATLINED: after a beat on the ground, Kai wakes up at the hospital.
+    // FLATLINED: a mission in progress fails; free roam wakes up at the
+    // hospital after a beat on the ground.
     if (player.dead && !wasDead) {
       hud.setBanner('FLATLINED', 'You woke up at Selara General — $100', 3);
+      if (missions.active) missions.onPlayerDeath();
     }
     wasDead = player.dead;
-    if (player.dead) {
+    if (player.dead && !missions.failed) {
       deadT += dt;
       if (deadT > 2.5) {
         deadT = 0;
@@ -406,7 +433,9 @@ function frame(now) {
 
   // --- Camera. ---
   const titleHour = 18.2;
-  const camera = game.state === 'title' ? titleCamera(t) : player.cameraForRender();
+  const camera = game.state === 'title' ? titleCamera(t)
+    : game.state === 'cutscene' && cutscene.camera ? cutscene.camera
+    : player.cameraForRender();
   const palette = skyPalette(game.state === 'title' ? titleHour : hour);
 
   // --- Render. ---
@@ -421,6 +450,7 @@ function frame(now) {
   weapons.drawDecals();
   pickups.draw();
   bigMap.drawBeam();
+  missions.drawBeam();
   renderer.drawWater(palette, t, 520);
   particles.draw();
   renderer.endFrame();
@@ -428,9 +458,14 @@ function frame(now) {
   // --- 2D overlay. ---
   hud.hour = game.state === 'title' ? titleHour : hour;
   hud.district = city.districtNameAt(player.x, player.z);
+  hud.inCutscene = game.state === 'cutscene';
   minimap.searchCenter = police.searchCenter;
   if (game.state === 'playing') {
     hud.draw(dt);
+  } else if (game.state === 'cutscene') {
+    // Cinematic: clear the HUD, then letterbox + subtitles only.
+    hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
+    cutscene.draw(hudCtx, hudCanvas.width, hudCanvas.height);
   } else {
     hudCtx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
   }
@@ -447,7 +482,7 @@ requestAnimationFrame(frame);
 
 // Debug hook for the automated playtest: real state, never a stub.
 window.__selara = {
-  version: 'ui-0',
+  version: 'story-0',
   renderer,
   player,
   city,
@@ -469,6 +504,9 @@ window.__selara = {
   sfx,
   notifications,
   game,
+  cutscene,
+  missions,
+  pierCar,
   get fps() { return fps; },
   get hour() { return hour; },
   setHour(h) { hour = h; },

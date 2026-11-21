@@ -171,7 +171,7 @@ export class Player {
     if (this.inCar) {
       // Chase camera: the mouse can look around, the view re-centres behind
       // the car 1.5 s after the last mouse movement.
-      const [mdx, mdy] = input.consumeMouse();
+      const [mdx, mdy] = this.input.consumeMouse();
       if (mdx !== 0 || mdy !== 0) this.lastMouseAt = time;
       this.camYaw += mdx * 0.0032;
       this.camPitch = clamp(this.camPitch + mdy * 0.0028, -0.1, 0.9);

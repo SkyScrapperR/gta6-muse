@@ -91,7 +91,7 @@ export class CombatAI {
   shootAtPlayer(member, time) {
     const p = this.player;
     const c = member.c;
-    const w = WEAPONS.kobra;
+    const w = WEAPONS[member.weapon ?? 'kobra'];
     const mx = c.x, my = c.y + 1.35, mz = c.z;
     const dx = p.x - mx, dy = (p.y + 1.2) - my, dz = p.z - mz;
     const dist = Math.hypot(dx, dy, dz);
@@ -137,7 +137,8 @@ export class CombatAI {
         if (m.stateT <= 0 && dist < 55 && !p.dead) {
           m.state = 'peek';
           m.stateT = 0.6;
-          m.burstLeft = 3;
+          // The boss fires longer, faster bursts.
+          m.burstLeft = m.boss ? 6 : 3;
           m.aimT = 0.35;
         } else if (m.stateT <= 0) {
           // Too far: reposition to a closer cover.
@@ -167,7 +168,7 @@ export class CombatAI {
         c.speed = 0;
         m.aimT -= dt;
         if (m.aimT <= 0 && m.burstLeft > 0 && m.fireT <= 0) {
-          m.fireT = 0.3;
+          m.fireT = m.boss ? 0.18 : 0.3;
           m.burstLeft--;
           this.shootAtPlayer(m, time);
         }

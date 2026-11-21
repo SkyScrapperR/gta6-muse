@@ -14,6 +14,7 @@ export class HUD {
     this.hour = 17.6;
     this.objective = '';
     this.objectiveSub = '';
+    this.progress = null; // {frac, label} for timed objectives
     this.banner = null; // {text, sub, until}
     this.lastDamageAt = -99;
     this.lastDamageHp = 100;
@@ -95,6 +96,22 @@ export class HUD {
       }
     }
 
+    // Progress bar (timed objectives, e.g. Dex in the bank).
+    if (this.progress) {
+      const bw = 260, bh = 10;
+      const bx = W / 2 - bw / 2, by = 62;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+      ctx.fillStyle = '#4dd0ff';
+      ctx.fillRect(bx, by, bw * Math.max(0, Math.min(1, this.progress.frac)), bh);
+      if (this.progress.label) {
+        ctx.textAlign = 'center';
+        ctx.font = '13px sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.fillText(this.progress.label, W / 2, by + 28);
+      }
+    }
+
     // Notifications, below the objective.
     const notes = this.notifications.visible();
     ctx.textAlign = 'center';
@@ -106,8 +123,9 @@ export class HUD {
       ctx.fillText(n.text, W / 2, y);
     });
 
-    // Crosshair: centre dot, gap grows with bloom. Only when a gun is out.
-    if (p.weapon !== 'fists' && !p.inCar && !p.dead) {
+    // Crosshair: centre dot, gap grows with bloom. Only when a gun is out,
+    // and never during a cutscene.
+    if (p.weapon !== 'fists' && !p.inCar && !p.dead && !this.inCutscene) {
       const cx = W / 2, cy = H / 2;
       const gap = 6 + p.bloom * 14 + (p.aiming ? -2 : 4);
       const len = 8;
