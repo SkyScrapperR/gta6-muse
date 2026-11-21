@@ -214,7 +214,7 @@ export class PostChain {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.hdrTex);
     const bp = this.brightProg;
-    gl.useProgram(bp);
+    gl.useProgram(bp.program);
     gl.uniform1i(bp.u.uTex, 0);
     gl.uniform2f(bp.u.uTexel, 1 / this.w, 1 / this.h);
     gl.uniform1f(bp.u.uThreshold, this.threshold);
@@ -224,7 +224,7 @@ export class PostChain {
     gl.viewport(0, 0, Math.max(2, this.w >> 2), Math.max(2, this.h >> 2));
     gl.bindTexture(gl.TEXTURE_2D, this.brightTex);
     const bl = this.blurProg;
-    gl.useProgram(bl);
+    gl.useProgram(bl.program);
     gl.uniform1i(bl.u.uTex, 0);
     gl.uniform2f(bl.u.uDir, 1 / Math.max(2, this.w >> 1), 0);
     this._drawQuad();
@@ -241,7 +241,7 @@ export class PostChain {
       gl.viewport(0, 0, 4, 4);
       gl.bindTexture(gl.TEXTURE_2D, this.hdrTex);
       const lp = this.lumProg;
-      gl.useProgram(lp);
+      gl.useProgram(lp.program);
       gl.uniform1i(lp.u.uTex, 0);
       gl.uniform2f(lp.u.uTexel, 0.25, 0.25);
       this._drawQuad();
@@ -262,7 +262,7 @@ export class PostChain {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.blurBTex);
     const cp = this.compProg;
-    gl.useProgram(cp);
+    gl.useProgram(cp.program);
     gl.uniform1i(cp.u.uHdr, 0);
     gl.uniform1i(cp.u.uBloom, 1);
     gl.uniform1f(cp.u.uExposure, this.exposure);

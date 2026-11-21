@@ -83,7 +83,7 @@ export class ShadowMap {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
     gl.viewport(0, 0, this.size, this.size);
     gl.clear(gl.DEPTH_BUFFER_BIT);
-    gl.useProgram(this.program);
+    gl.useProgram(this.program.program);
     gl.uniformMatrix4fv(this.program.u.uLightVP, false, this.lightVP);
     gl.enable(gl.DEPTH_TEST);
     gl.depthMask(true);

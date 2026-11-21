@@ -19,10 +19,26 @@ export class HUD {
     this.lastDamageAt = -99;
     this.lastDamageHp = 100;
     this.time = 0;
+    this.weather = 'clear'; // 'clear' | 'rain', from the RainSystem
+    this.radioText = null; // current radio station + song, with expiry
+    this.radioUntil = 0;
+    this.hitMarkerT = -99; // last hit, for the crosshair X (Tier 3)
   }
 
   setBanner(text, sub, seconds = 3) {
     this.banner = { text, sub, until: this.time + seconds };
+  }
+
+  // Radio pop-up (Tier 2): station + song, bottom centre, fades after
+  // a few seconds. Called by the music system on station/song change.
+  showRadio(text, seconds = 4) {
+    this.radioText = text;
+    this.radioUntil = this.time + seconds;
+  }
+
+  // Hit marker (Tier 3): a white X over the crosshair for a blink.
+  showHitMarker() {
+    this.hitMarkerT = this.time;
   }
 
   formatClock(hour) {
@@ -68,7 +84,8 @@ export class HUD {
     ctx.fillText(this.formatClock(this.hour), 16, 30);
     ctx.font = '14px sans-serif';
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    ctx.fillText(this.district ?? '', 16, 52);
+    // The weather rides on the district line while it rains.
+    ctx.fillText((this.district ?? '') + (this.weather === 'rain' ? ' — Rain' : ''), 16, 52);
     // FPS counter, toggled with F3 (prompt section 2).
     if (this.showFps) {
       ctx.font = '14px sans-serif';
@@ -145,6 +162,32 @@ export class HUD {
       ctx.stroke();
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
       ctx.fillRect(cx - 1, cy - 1, 2, 2);
+      // Hit marker (Tier 3): a white X over the crosshair, fading fast.
+      const sinceHit = this.time - this.hitMarkerT;
+      if (sinceHit < 0.25) {
+        const a = 1 - sinceHit / 0.25;
+        const m = gap + 4;
+        ctx.strokeStyle = `rgba(255,255,255,${a})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cx - m - 5, cy - m - 5); ctx.lineTo(cx - m + 3, cy - m + 3);
+        ctx.moveTo(cx + m - 3, cy - m - 5); ctx.lineTo(cx + m + 5, cy - m + 3);
+        ctx.moveTo(cx - m - 5, cy + m + 5); ctx.lineTo(cx - m + 3, cy + m - 3);
+        ctx.moveTo(cx + m - 3, cy + m + 5); ctx.lineTo(cx + m + 5, cy + m - 3);
+        ctx.stroke();
+      }
+    }
+
+    // Radio pop-up (Tier 2): station + song, bottom centre.
+    if (this.radioText && this.time < this.radioUntil) {
+      const a = Math.min(1, (this.radioUntil - this.time) / 0.5);
+      ctx.textAlign = 'center';
+      ctx.font = '15px sans-serif';
+      const tw = ctx.measureText(this.radioText).width;
+      ctx.fillStyle = `rgba(0,0,0,${0.55 * a})`;
+      ctx.fillRect(W / 2 - tw / 2 - 14, H - 128, tw + 28, 28);
+      ctx.fillStyle = `rgba(255,255,255,${0.95 * a})`;
+      ctx.fillText(this.radioText, W / 2, H - 108);
     }
 
     // Bottom-right: minimap with health/armor arcs.

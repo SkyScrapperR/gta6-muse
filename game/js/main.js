@@ -14,10 +14,13 @@ import { CharacterSystem } from './entities/character.js';
 import { Player } from './entities/player.js';
 import { VehicleSystem } from './entities/vehicle.js';
 import { TrafficLights } from './world/roads.js';
+import { TrafficLightMeshes } from './world/traffic-lights.js';
 import { TrafficManager } from './ai/traffic.js';
 import { PedestrianSystem } from './entities/pedestrian.js';
 import { PoliceSystem } from './ai/police.js';
 import { ParticleSystem } from './fx/particles.js';
+import { LightRegistry } from './fx/lights.js';
+import { RainSystem } from './fx/rain.js';
 import { WeaponSystem, WEAPONS } from './combat/weapons.js';
 import { PickupSystem } from './combat/pickups.js';
 import { CombatAI } from './ai/combat-ai.js';
@@ -105,6 +108,19 @@ for (let i = 0; i < 8; i++) {
 const lights = new TrafficLights(20261121);
 const traffic = new TrafficManager(vehicles, lights, city);
 traffic.spawn(6);
+// Tier 2: visible traffic-light heads, one per corner of each
+// intersection, cycling with the logic above.
+const trafficLightMeshes = new TrafficLightMeshes({ renderer, trafficLights: lights });
+// Tier 2: night point lights. Static lamps from the city generator
+// (head height ~4.8 m, warm sodium); dynamics are re-registered every
+// frame in the render section below.
+const lightRegistry = new LightRegistry();
+for (const lamp of city.lamps) {
+  lightRegistry.addStatic(lamp.x, 4.8, lamp.z, 1.0, 0.72, 0.32, 0.55, 16);
+}
+renderer.lights = lightRegistry;
+let lightCap = 24; // point lights per frame, by preset (see applyQuality)
+let muzzleFlash = null; // {x, y, z, t} — one-frame light from a gunshot
 const peds = new PedestrianSystem(charSystem, city);
 peds.spawn(24);
 const police = new PoliceSystem(vehicles, charSystem, city, player);
@@ -189,6 +205,13 @@ const game = {
     qualityDpr = preset === 'low' ? 1 : preset === 'high' ? 2 : 1.5;
     renderScale = preset === 'low' ? 0.6 : 1;
     currentQuality = preset;
+    // Tier 2: shadow map size, post chain and light cap follow the
+    // preset. Low renders direct (no shadow, no bloom, 12 lights);
+    // Medium gets a 1024 shadow map + bloom + 24 lights; High the full
+    // 2048 map + bloom + 48 lights.
+    renderer.shadowSize = preset === 'low' ? 0 : preset === 'high' ? 2048 : 1024;
+    renderer.postWanted = preset !== 'low';
+    lightCap = preset === 'low' ? 12 : preset === 'high' ? 48 : 24;
     saveQuality(preset);
     // Keep the Settings select showing the preset that is actually on.
     const sel = document.getElementById('setting-quality');
@@ -286,6 +309,8 @@ player.onShoot = (weaponKey) => {
   const muzzle = [player.x + fx * 0.5, player.y + 1.35, player.z + fz * 0.5];
   const spread = (player.aiming ? w.spread : w.hipSpread) + player.bloom * 0.03;
   particles.muzzleFlash(muzzle[0], muzzle[1], muzzle[2], camDir);
+  // One frame of warm light at the muzzle, for the night-light pass.
+  muzzleFlash = { x: muzzle[0], y: muzzle[1], z: muzzle[2], t: performance.now() / 1000 };
   for (let i = 0; i < w.pellets; i++) {
     const bx = aim.point[0] - muzzle[0];
     const by = aim.point[1] - muzzle[1];
@@ -337,6 +362,10 @@ player.onPunch = () => {
 };
 
 const cutscene = new CutscenePlayer(city.collision);
+// Tier 2: weather — clear <-> rain, wet roads, rain streaks and sound.
+// Created here (not with the traffic section) because it needs the
+// notifications, particles and sfx systems declared above.
+const rain = new RainSystem({ notifications, particles, sfx });
 const missions = new MissionSystem({
   renderer, player, vehicles, combatAI, police, pickups, city,
   minimap, hud, notifications, sfx, save, cutscene, charSystem,
@@ -468,6 +497,10 @@ function frame(now) {
     pickups.update(dt, t);
     vehicles.update(dt, t);
     charSystem.update(dt, t);
+    // Tier 2: weather and the visible traffic lights live in the same
+    // simulation step as the traffic they belong to.
+    rain.update(dt, player.x, player.y + 2, player.z);
+    trafficLightMeshes.update(t);
     // FLATLINED: a mission in progress fails; free roam wakes up at the
     // hospital after a beat on the ground.
     if (player.dead && !wasDead) {
@@ -510,6 +543,40 @@ function frame(now) {
     : player.cameraForRender();
   const palette = skyPalette(game.state === 'title' ? titleHour : hour);
 
+  // Tier 2: night point lights. Statics (street lamps) are registered
+  // once at boot; dynamics are re-registered every frame and the
+  // nearest `lightCap` to the player are uploaded to the lit shader.
+  // Rain darkens the sky a little and wets the roads (uWet).
+  lightRegistry.clearDynamics();
+  for (const v of vehicles.vehicles) {
+    if (v.wreck) continue;
+    const dx = v.x - player.x, dz = v.z - player.z;
+    if (dx * dx + dz * dz > 150 * 150) continue;
+    const fx = Math.sin(v.heading), fz = Math.cos(v.heading);
+    const half = (v.type.len ?? 4) / 2;
+    lightRegistry.addDynamic(v.x + fx * half, 0.8, v.z + fz * half, 1, 0.95, 0.8, 0.5, 18);
+    lightRegistry.addDynamic(v.x - fx * half, 0.8, v.z - fz * half, 1, 0.08, 0.08, 0.35, 8);
+  }
+  for (const c of police.copCars) {
+    const flash = Math.sin(t * 9) > 0;
+    if (flash) lightRegistry.addDynamic(c.v.x, 2.2, c.v.z, 1, 0.1, 0.1, 0.9, 25);
+    else lightRegistry.addDynamic(c.v.x, 2.2, c.v.z, 0.1, 0.3, 1, 0.9, 25);
+  }
+  if (muzzleFlash && t - muzzleFlash.t < 0.12) {
+    lightRegistry.addDynamic(muzzleFlash.x, muzzleFlash.y, muzzleFlash.z, 1, 0.85, 0.4, 1.2, 12);
+  }
+  lightRegistry.update(player.x, player.y + 2, player.z, lightCap, palette.night);
+  renderer.wet = rain.wet;
+  // Rain also dims the sky itself (the palette is built from the hour,
+  // so scale it here: darker zenith/horizon, dimmer sun).
+  if (rain.amount > 0.05) {
+    const dim = 1 - rain.amount * 0.45;
+    palette.sunColor = palette.sunColor.map((c) => c * dim);
+    palette.zenith = palette.zenith.map((c) => c * (1 - rain.amount * 0.35));
+    palette.horizon = palette.horizon.map((c) => c * (1 - rain.amount * 0.25));
+    palette.fogColor = palette.fogColor.map((c) => c * (1 - rain.amount * 0.2));
+  }
+
   // --- Render. ---
   renderer.cameraPos = camera.pos;
   renderer.beginFrame(camera, palette, t);
@@ -517,6 +584,7 @@ function frame(now) {
   renderer.drawBatch('ground');
   for (const [name, bounds] of world.chunkBounds) renderer.drawChunk(name, bounds);
   for (const name of PROP_BATCHES) renderer.drawBatch(name);
+  trafficLightMeshes.draw();
   charSystem.draw();
   vehicles.draw();
   weapons.drawDecals();
@@ -530,6 +598,7 @@ function frame(now) {
   // --- 2D overlay. ---
   hud.hour = game.state === 'title' ? titleHour : hour;
   hud.district = city.districtNameAt(player.x, player.z);
+  hud.weather = rain.state;
   hud.inCutscene = game.state === 'cutscene';
   hud.fps = fps;
   hud.showFps = showFps;
@@ -583,6 +652,9 @@ window.__selara = {
   missions,
   pierCar,
   charSystem,
+  rain,
+  lightRegistry,
+  trafficLightMeshes,
   get fps() { return fps; },
   get hour() { return hour; },
   setHour(h) { hour = h; },
