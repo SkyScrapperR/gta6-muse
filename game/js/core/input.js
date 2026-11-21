@@ -8,6 +8,12 @@ export class Input {
     this.canvas = canvas;
     this.keys = new Set();
     this.prevKeys = new Set();
+    // Edge flags set by the event itself, so a quick tap between frames is
+    // never lost (at 2 fps on a slow machine a click can land entirely
+    // between two frames). Cleared at the end of each frame.
+    this.pressedKeys = new Set();
+    this.pressedMouseLeft = false;
+    this.pressedMouseRight = false;
     this.mouseDX = 0;
     this.mouseDY = 0;
     this.mouseLeft = false;
@@ -19,6 +25,7 @@ export class Input {
 
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Tab') e.preventDefault();
+      if (!e.repeat) this.pressedKeys.add(e.code);
       this.keys.add(e.code);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -31,8 +38,8 @@ export class Input {
       this.mouseDY += e.movementY || 0;
     });
     canvas.addEventListener('mousedown', (e) => {
-      if (e.button === 0) this.mouseLeft = true;
-      if (e.button === 2) this.mouseRight = true;
+      if (e.button === 0) { this.mouseLeft = true; this.pressedMouseLeft = true; }
+      if (e.button === 2) { this.mouseRight = true; this.pressedMouseRight = true; }
     });
     window.addEventListener('mouseup', (e) => {
       if (e.button === 0) this.mouseLeft = false;
@@ -56,17 +63,18 @@ export class Input {
     return this.keys.has(code);
   }
 
-  // True only on the frame the key went down.
+  // True only on the frame the key went down (or any frame before the
+  // next endFrame, if the tap happened between frames).
   pressed(code) {
-    return this.keys.has(code) && !this.prevKeys.has(code);
+    return this.pressedKeys.has(code);
   }
 
   pressedLeft() {
-    return this.mouseLeft && !this.prevMouseLeft;
+    return this.pressedMouseLeft;
   }
 
   pressedRight() {
-    return this.mouseRight && !this.prevMouseRight;
+    return this.pressedMouseRight;
   }
 
   // Mouse movement since the last frame, in pixels.
@@ -89,5 +97,8 @@ export class Input {
     this.prevKeys = new Set(this.keys);
     this.prevMouseLeft = this.mouseLeft;
     this.prevMouseRight = this.mouseRight;
+    this.pressedKeys.clear();
+    this.pressedMouseLeft = false;
+    this.pressedMouseRight = false;
   }
 }

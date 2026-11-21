@@ -9,6 +9,7 @@
 
 import { clamp, wrapAngle, angleDelta } from '../core/math.js';
 import { OUTFITS } from './character.js';
+import { WEAPONS } from '../combat/weapons.js';
 
 const WALK_SPEED = 4.0;
 const SPRINT_SPEED = 7.0;
@@ -31,7 +32,15 @@ export class Player {
     this.armor = 0;
     this.money = 250;
     this.weapon = 'fists';
+    this.weapons = ['fists'];
     this.ammo = { kobra: 24, wasp: 0, thunder: 0 };
+    this.mag = { kobra: 12, wasp: 0, thunder: 0 };
+    this.fireT = 0;
+    this.reloadT = 0;
+    this.bloom = 0;
+    this.punchHitDone = false;
+    this.onShoot = null; // (weaponKey) => void, wired by main.js
+    this.onPunch = null; // () => void, wired by main.js
     this.aiming = false;
     this.inCar = null; // vehicle object, or null
     this.punchT = 0;
@@ -56,8 +65,64 @@ export class Player {
     }
     this.money = Math.max(0, this.money - 100);
     this.weapons = ['fists'];
-    this.ammo = {};
+    this.weapon = 'fists';
+    this.ammo = { kobra: 0, wasp: 0, thunder: 0 };
+    this.mag = { kobra: 0, wasp: 0, thunder: 0 };
     this.spawn(x, z, 0);
+  }
+
+  // Give Kai a weapon (mission rewards, gun shop) with a full magazine.
+  giveWeapon(key, reserveAmmo = 0) {
+    if (!this.weapons.includes(key)) this.weapons.push(key);
+    this.mag[key] = WEAPONS[key].mag;
+    this.ammo[key] = (this.ammo[key] ?? 0) + reserveAmmo;
+  }
+
+  setWeapon(key) {
+    if (!this.weapons.includes(key)) return;
+    if (this.reloadT > 0) return;
+    this.weapon = key;
+    this.fireT = 0;
+    this.bloom = 0;
+  }
+
+  startReload() {
+    const w = WEAPONS[this.weapon];
+    if (this.weapon === 'fists' || this.reloadT > 0) return;
+    if (this.mag[this.weapon] >= w.mag || (this.ammo[this.weapon] ?? 0) <= 0) return;
+    this.reloadT = w.reload;
+  }
+
+  finishReload() {
+    const w = WEAPONS[this.weapon];
+    const need = w.mag - this.mag[this.weapon];
+    const take = Math.min(need, this.ammo[this.weapon] ?? 0);
+    this.mag[this.weapon] += take;
+    this.ammo[this.weapon] -= take;
+  }
+
+  // Fire one shot (or start the punch). The actual hitscan lives in
+  // main.js via onShoot, so the player never knows about the world.
+  tryShoot() {
+    const w = WEAPONS[this.weapon];
+    if (this.reloadT > 0 || this.fireT > 0) return;
+    if (this.weapon === 'fists') {
+      if (this.punchT === 0) {
+        this.punchT = 0.0001;
+        this.char.punchT = 0.0001;
+        this.punchHitDone = false;
+      }
+      return;
+    }
+    if (this.mag[this.weapon] <= 0) {
+      this.startReload();
+      return;
+    }
+    this.fireT = w.rate;
+    this.mag[this.weapon]--;
+    this.bloom = Math.min(1, this.bloom + (this.weapon === 'wasp' ? 0.12 : 0.25));
+    this.camPitch = Math.min(1.1, this.camPitch + 0.012); // recoil kick
+    if (this.onShoot) this.onShoot(this.weapon);
   }
 
   spawn(x, z, heading = 0) {
@@ -191,16 +256,35 @@ export class Player {
       this.heading += angleDelta(this.heading, target) * Math.min(1, dt * 10);
     }
 
-    // Punch combo.
-    if (input.pressedLeft() && this.weapon === 'fists') {
-      this.punchT = 0.0001;
-      this.char.punchT = 0.0001;
+    // Punch combo (fists) or gunfire.
+    const w = WEAPONS[this.weapon];
+    if (w.auto) {
+      if (input.mouseLeft) this.tryShoot();
+    } else if (input.pressedLeft()) {
+      this.tryShoot();
     }
     if (this.punchT > 0) {
+      const prev = this.punchT;
       this.punchT += dt / 0.45;
       this.char.punchT = this.punchT;
+      if (!this.punchHitDone && prev < 0.3 && this.punchT >= 0.3 && this.onPunch) {
+        this.punchHitDone = true;
+        this.onPunch();
+      }
       if (this.punchT >= 1) { this.punchT = 0; this.char.punchT = 0; }
     }
+    // Reload and weapon switching.
+    if (this.reloadT > 0) {
+      this.reloadT -= dt;
+      if (this.reloadT <= 0) { this.reloadT = 0; this.finishReload(); }
+    }
+    this.bloom = Math.max(0, this.bloom - dt * 1.5);
+    if (this.fireT > 0) this.fireT -= dt;
+    if (input.pressed('KeyR')) this.startReload();
+    if (input.pressed('Digit1')) this.setWeapon('fists');
+    if (input.pressed('Digit2')) this.setWeapon('kobra');
+    if (input.pressed('Digit3')) this.setWeapon('wasp');
+    if (input.pressed('Digit4')) this.setWeapon('thunder');
 
     // Enter / exit a car.
     if (input.pressed('KeyF') && vehicles) {
@@ -251,9 +335,6 @@ export class Player {
 
   updateCamera(dt) {
     void dt;
-    // Target: just above Kai's head. The camera sits behind and above,
-    // looking down at him; pitch > 0 means looking down.
-    const target = [this.x, this.y + 1.7, this.z];
     const pitch = this.camPitch;
     const yaw = this.camYaw;
     const dir = [
@@ -261,6 +342,35 @@ export class Player {
       -Math.sin(pitch),
       Math.cos(yaw) * Math.cos(pitch),
     ];
+
+    if (this.aiming) {
+      // Over-the-shoulder aim: the camera sits at Kai's right shoulder and
+      // looks along the yaw/pitch direction, so the crosshair (screen
+      // centre) points at the world and Kai stays in the lower frame.
+      const fwdX = Math.sin(yaw), fwdZ = Math.cos(yaw);
+      const rightX = Math.cos(yaw), rightZ = -Math.sin(yaw);
+      let bx = this.x + rightX * 0.8 - fwdX * 2.5;
+      let bz = this.z + rightZ * 0.8 - fwdZ * 2.5;
+      // Pull the camera in if a building is between Kai and the boom.
+      const hit = this.city.collision.raycast(this.x, this.z, bx - this.x, bz - this.z, 2.6);
+      if (hit && hit.dist < 2.6) {
+        const s = Math.max(0.4, hit.dist - 0.3) / 2.6;
+        bx = this.x + (bx - this.x) * s;
+        bz = this.z + (bz - this.z) * s;
+      }
+      this.camPos = [bx, this.y + 1.6, bz];
+      this.camTarget = [
+        bx + dir[0] * 20,
+        this.y + 1.6 + dir[1] * 20,
+        bz + dir[2] * 20,
+      ];
+      if (this.camPos[1] < 0.6) this.camPos[1] = 0.6;
+      return;
+    }
+
+    // Third-person orbit: target just above Kai's head, camera behind and
+    // above, looking down at him; pitch > 0 means looking down.
+    const target = [this.x, this.y + 1.7, this.z];
     let dist = this.camDist;
     // Keep the camera out of buildings: shorten the boom on a hit.
     const hit = this.city.collision.raycast(
