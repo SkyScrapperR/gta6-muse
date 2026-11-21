@@ -11,8 +11,8 @@ export class ParticleSystem {
     for (let i = 0; i < MAX_PARTICLES; i++) {
       this.parts.push({
         alive: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
-        life: 0, maxLife: 1, size: 0.2, grow: 0, drag: 0, gravity: 0,
-        r: 1, g: 1, b: 1, a: 1,
+        life: 0, maxLife: 1, size: 0.2, height: 0.2, grow: 0, drag: 0, gravity: 0,
+        groundKill: false, r: 1, g: 1, b: 1, a: 1,
       });
     }
     this.cursor = 0;
@@ -28,12 +28,24 @@ export class ParticleSystem {
     p.vx = vx; p.vy = vy; p.vz = vz;
     p.life = life; p.maxLife = life;
     p.size = size;
+    // Height is the vertical size the shader reads (aInstance[1][1]).
+    // Round sprites use height == size; a tall height makes the shader
+    // draw a vertical streak (rain). See streak() below.
+    p.height = opts.height ?? size;
     p.grow = opts.grow ?? 0;
     p.drag = opts.drag ?? 0;
     p.gravity = opts.gravity ?? 0;
+    p.groundKill = opts.groundKill ?? false;
     p.r = color[0]; p.g = color[1]; p.b = color[2];
     p.a = opts.alpha ?? 1;
     return p;
+  }
+
+  // A falling rain streak: thin, tall, fast, dies when it hits the
+  // ground. Written through the same pool so rain costs no extra draw.
+  streak(x, y, z, width, height, color, alpha = 0.35) {
+    this.spawn(x, y, z, 0, -22, 0, 0.6 + Math.random() * 0.5, width, color,
+      { height, alpha, groundKill: true });
   }
 
   muzzleFlash(x, y, z, dir) {
@@ -128,7 +140,11 @@ export class ParticleSystem {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.z += p.vz * dt;
-      if (p.y < 0.02) { p.y = 0.02; p.vy = 0; }
+      if (p.y < 0.02) {
+        // Rain streaks die on impact; smoke and sparks rest on the ground.
+        if (p.groundKill) { p.alive = false; continue; }
+        p.y = 0.02; p.vy = 0;
+      }
       p.size += p.grow * dt;
     }
   }
@@ -143,7 +159,7 @@ export class ParticleSystem {
       const o = n * 16;
       const m = this.matrices;
       m[o] = p.size; m[o + 1] = 0; m[o + 2] = 0; m[o + 3] = 0;
-      m[o + 4] = 0; m[o + 5] = 1; m[o + 6] = 0; m[o + 7] = 0;
+      m[o + 4] = 0; m[o + 5] = p.height; m[o + 6] = 0; m[o + 7] = 0;
       m[o + 8] = 0; m[o + 9] = 0; m[o + 10] = 1; m[o + 11] = 0;
       m[o + 12] = p.x; m[o + 13] = p.y; m[o + 14] = p.z; m[o + 15] = 1;
       this.colors[n * 4] = p.r;

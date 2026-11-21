@@ -146,6 +146,47 @@ export function uploadDynamic(gl, buffer, data) {
   gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
 }
 
+// --- Framebuffer helpers (Tier 2: shadow map + post chain). ---
+
+// A depth texture for a shadow map: 24-bit depth, nearest filtering (the
+// shader does its own PCF), clamp to edge so out-of-range samples read
+// the far plane (lit, not shadowed).
+export function createDepthTexture(gl, size) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, size, size, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return tex;
+}
+
+// A colour texture: half-float when `floatTex` (HDR target — needs
+// EXT_color_buffer_float to render into), plain RGBA8 otherwise.
+export function createColorTexture(gl, w, h, floatTex = false) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  if (floatTex) {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  } else {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  }
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return tex;
+}
+
+// A depth renderbuffer for an HDR target.
+export function createDepthRenderbuffer(gl, w, h) {
+  const rb = gl.createRenderbuffer();
+  gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+  gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
+  return rb;
+}
+
 // A 2D RGBA8 texture from raw pixels (used for the pre-rendered minimap).
 export function makeTexture2D(gl, width, height, pixels) {
   const tex = gl.createTexture();

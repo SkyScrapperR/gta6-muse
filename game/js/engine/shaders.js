@@ -20,11 +20,13 @@ layout(location = 4) in mat4 aInstance;
 layout(location = 8) in vec4 aInstanceColor;
 uniform mat4 uProj;
 uniform mat4 uView;
+uniform mat4 uLightVP;
 out vec3 vNormal;
 out vec3 vColor;
 out vec3 vEmissive;
 out vec3 vWorld;
 out float vFogDepth;
+out vec4 vLightPos;
 void main() {
   vec4 world = aInstance * vec4(aPos, 1.0);
   vWorld = world.xyz;
@@ -35,6 +37,7 @@ void main() {
   vEmissive = aEmissive * aInstanceColor.a;
   vec4 view = uView * world;
   vFogDepth = -view.z;
+  vLightPos = uLightVP * world;
   gl_Position = uProj * view;
 }`;
 
@@ -45,6 +48,7 @@ in vec3 vColor;
 in vec3 vEmissive;
 in vec3 vWorld;
 in float vFogDepth;
+in vec4 vLightPos;
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform vec3 uHemiSky;
@@ -52,19 +56,84 @@ uniform vec3 uHemiGround;
 uniform vec3 uFogColor;
 uniform float uFogDensity;
 uniform float uNight;
+uniform vec3 uCamPos;
+uniform float uWet;
+uniform float uTonemap;
+// Directional shadow map (Tier 2).
+uniform sampler2D uShadowMap;
+uniform float uShadowOn;
+uniform vec2 uShadowTexel;
+// Night point lights (Tier 2): street lamps, headlights, neon, muzzle
+// flashes. The registry caps the count per quality preset.
+uniform int uLightCount;
+uniform vec4 uLightPos[48];
+uniform vec4 uLightCol[48];
 out vec4 fragColor;
+float hash13(vec3 p) {
+  p = fract(p * 0.1031);
+  p += dot(p, p.zyx + 31.32);
+  return fract((p.x + p.y) * p.z);
+}
+float shadowFactor(vec3 n) {
+  if (uShadowOn < 0.5) return 1.0;
+  vec3 lp = vLightPos.xyz / vLightPos.w;
+  lp = lp * 0.5 + 0.5;
+  if (lp.x < 0.0 || lp.x > 1.0 || lp.y < 0.0 || lp.y > 1.0 || lp.z > 1.0) return 1.0;
+  float bias = 0.0006 + 0.0012 * (1.0 - max(dot(n, uSunDir), 0.0));
+  float s = 0.0;
+  for (int x = -1; x <= 1; x++) {
+    for (int y = -1; y <= 1; y++) {
+      float d = texture(uShadowMap, lp.xy + vec2(float(x), float(y)) * uShadowTexel).r;
+      s += (lp.z - bias) <= d ? 1.0 : 0.0;
+    }
+  }
+  return s / 9.0;
+}
 void main() {
   vec3 n = normalize(vNormal);
   float sunAmount = max(dot(n, uSunDir), 0.0);
+  float shadow = shadowFactor(n);
   vec3 hemi = mix(uHemiGround, uHemiSky, n.y * 0.5 + 0.5);
-  vec3 light = hemi + uSunColor * sunAmount;
+  // Hemisphere ambient is not shadowed; only the sun is.
+  vec3 light = hemi + uSunColor * sunAmount * shadow;
   vec3 col = vColor * light;
+  // Night point lights: inverse-square falloff, each clamped so one
+  // lamp cannot blow out the street.
+  for (int i = 0; i < 48; i++) {
+    if (i >= uLightCount) break;
+    vec3 toL = uLightPos[i].xyz - vWorld;
+    float d2 = dot(toL, toL);
+    float r = uLightPos[i].w;
+    float att = clamp(1.0 - d2 / (r * r), 0.0, 1.0);
+    att *= att;
+    float nd = max(dot(n, toL * inversesqrt(max(d2, 0.0001))), 0.0);
+    col += vColor * uLightCol[i].rgb * (uLightCol[i].a * att * nd);
+  }
   // Windows, neon and lamps glow: a little by day, fully at night.
   col += vEmissive * (0.25 + 0.95 * uNight);
+  // Surface detail: a faint world-space grime, stronger on up-facing
+  // surfaces (asphalt, concrete), so flat colours stop looking plastic.
+  float g1 = hash13(floor(vWorld * 2.0));
+  float g2 = hash13(floor(vWorld * 6.0 + 17.0));
+  float grime = mix(1.0, 0.93 + 0.14 * g1 * g2, step(0.6, n.y));
+  col *= grime;
+  // Wet roads (Tier 2): when it rains, up-facing surfaces darken and
+  // pick up a sky sheen plus a sun glint.
+  if (uWet > 0.01 && n.y > 0.7) {
+    vec3 viewDir = normalize(uCamPos - vWorld);
+    float fres = pow(1.0 - max(dot(viewDir, n), 0.0), 3.0);
+    col = col * (1.0 - 0.32 * uWet) + uHemiSky * fres * 0.55 * uWet;
+    float glint = pow(max(dot(reflect(-uSunDir, n), viewDir), 0.0), 60.0);
+    col += uSunColor * glint * 0.6 * uWet;
+  }
   float fog = 1.0 - exp(-uFogDensity * uFogDensity * vFogDepth * vFogDepth);
   col = mix(col, uFogColor, clamp(fog, 0.0, 1.0));
-  // Gentle filmic-ish shoulder so nothing large clips to flat white.
-  col = col / (col + vec3(0.85));
+  // When the post chain is active the HDR value goes to the chain and
+  // ACES runs there; without it, the shoulder runs here so the noon sun
+  // does not clip to flat white.
+  if (uTonemap > 0.5) {
+    col = col / (col + vec3(0.85));
+  }
   fragColor = vec4(col, 1.0);
 }`;
 
@@ -99,6 +168,21 @@ float hash13(vec3 p) {
   p += dot(p, p.zyx + 31.32);
   return fract((p.x + p.y) * p.z);
 }
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
 void main() {
   vec2 ndc = vUv * 2.0 - 1.0;
   vec3 ray = normalize(uCamFwd
@@ -108,6 +192,18 @@ void main() {
   vec3 col = mix(uHorizon, uZenith, pow(max(h, 0.0), 0.55));
   float sunDot = max(dot(ray, uSunDir), 0.0);
   col += uSunTint * (pow(sunDot, 220.0) * 1.4 + pow(sunDot, 10.0) * 0.30);
+  // Procedural clouds (Tier 2): two octaves of value noise projected on
+  // the sky dome, drifting slowly with time, lit warm near the sun and
+  // fading out at night.
+  if (ray.y > 0.02) {
+    vec2 cuv = ray.xz / max(ray.y, 0.08);
+    float t = uStars * 0.004;
+    float cl = vnoise(cuv * 1.4 + vec2(t, t * 0.6)) * 0.65
+      + vnoise(cuv * 3.1 - vec2(t * 1.7, t)) * 0.35;
+    float cmask = smoothstep(0.56, 0.78, cl) * smoothstep(0.02, 0.18, ray.y);
+    vec3 cloudCol = mix(vec3(0.85, 0.86, 0.9), uSunTint * 1.2 + vec3(0.35), clamp(sunDot * 1.4, 0.0, 1.0));
+    col = mix(col, cloudCol, cmask * 0.38 * (1.0 - uNight * 0.85));
+  }
   if (uNight > 0.02 && ray.y > 0.02) {
     vec3 cell = floor(ray * 220.0);
     float star = hash13(cell);
@@ -192,14 +288,25 @@ uniform mat4 uProj;
 uniform mat4 uView;
 out vec2 vUv;
 out vec4 vColor;
+out float vTall;
 void main() {
   vUv = aPos * 0.5 + 0.5;
   vColor = aInstanceColor;
   vec3 centre = vec3(aInstance[3][0], aInstance[3][1], aInstance[3][2]);
   float size = aInstance[0][0];
+  float height = aInstance[1][1];
   vec3 right = vec3(uView[0][0], uView[1][0], uView[2][0]);
   vec3 up = vec3(uView[0][1], uView[1][1], uView[2][1]);
-  vec3 world = centre + right * aPos.x * size + up * aPos.y * size;
+  vec3 world;
+  if (height > size * 3.0) {
+    // Rain streak (Tier 2): the width faces the camera, the height is
+    // world-vertical, so the drop reads as a falling line.
+    vTall = 1.0;
+    world = centre + right * aPos.x * size + vec3(0.0, 1.0, 0.0) * aPos.y * height;
+  } else {
+    vTall = 0.0;
+    world = centre + right * aPos.x * size + up * aPos.y * size;
+  }
   gl_Position = uProj * uView * vec4(world, 1.0);
 }`;
 
@@ -207,11 +314,63 @@ export const PARTICLE_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;
 in vec4 vColor;
+in float vTall;
 out vec4 fragColor;
 void main() {
   vec2 d = vUv - 0.5;
-  float r = length(d) * 2.0;
-  float alpha = smoothstep(1.0, 0.15, r) * vColor.a;
+  float alpha;
+  if (vTall > 0.5) {
+    // A thin vertical streak, soft at both ends.
+    float across = 1.0 - smoothstep(0.15, 0.5, abs(d.x));
+    float along = smoothstep(0.0, 0.25, 1.0 - abs(d.y) * 2.0);
+    alpha = across * along * vColor.a;
+  } else {
+    float r = length(d) * 2.0;
+    alpha = smoothstep(1.0, 0.15, r) * vColor.a;
+  }
   if (alpha < 0.01) discard;
+  fragColor = vec4(vColor.rgb, alpha);
+}`;
+
+// Depth-only program for the shadow map: position + instance matrix
+// (locations 0 and 4-7, the same layout as the lit shader, so the lit
+// VAOs are valid for this program too).
+export const DEPTH_VERT = `#version 300 es
+layout(location = 0) in vec3 aPos;
+layout(location = 4) in mat4 aInstance;
+uniform mat4 uLightVP;
+void main() {
+  gl_Position = uLightVP * aInstance * vec4(aPos, 1.0);
+}`;
+
+export const DEPTH_FRAG = `#version 300 es
+precision highp float;
+void main() {}`;
+
+// Heli spotlight cone (Tier 2): a translucent additive cone hanging
+// from the helicopter. vY is 1 at the top (the heli) and 0 at the
+// ground pool; alpha fades toward the ground.
+export const CONE_VERT = `#version 300 es
+layout(location = 0) in vec3 aPos;
+layout(location = 4) in mat4 aInstance;
+layout(location = 8) in vec4 aInstanceColor;
+uniform mat4 uProj;
+uniform mat4 uView;
+uniform float uHeight;
+out float vY;
+out vec4 vColor;
+void main() {
+  vY = clamp(aPos.y / uHeight + 1.0, 0.0, 1.0);
+  vColor = aInstanceColor;
+  gl_Position = uProj * uView * aInstance * vec4(aPos, 1.0);
+}`;
+
+export const CONE_FRAG = `#version 300 es
+precision highp float;
+in float vY;
+in vec4 vColor;
+out vec4 fragColor;
+void main() {
+  float alpha = mix(0.03, 0.30, vY) * vColor.a;
   fragColor = vec4(vColor.rgb, alpha);
 }`;

@@ -13,6 +13,8 @@ export class Sfx {
     this.engineOsc = null;
     this.engineGain = null;
     this.engineFilter = null;
+    this.rainSrc = null;
+    this.rainGain = null;
     this.sirenOsc = null;
     this.sirenGain = null;
     this.sirenPan = null;
@@ -114,6 +116,33 @@ export class Sfx {
     pan.connect(this.sfxGain);
     o.start(t);
     o.stop(t + dur + 0.02);
+  }
+
+  // Rain loop (Tier 2): looping filtered noise whose gain follows the
+  // rain amount. Created lazily on first use; level 0 silences it.
+  setRain(level) {
+    if (!this.ctx) return;
+    if (!this.rainSrc) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noiseBuf;
+      src.loop = true;
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = 1400;
+      const f2 = this.ctx.createBiquadFilter();
+      f2.type = 'highpass';
+      f2.frequency.value = 300;
+      const g = this.ctx.createGain();
+      g.gain.value = 0;
+      src.connect(f);
+      f.connect(f2);
+      f2.connect(g);
+      g.connect(this.sfxGain);
+      src.start();
+      this.rainSrc = src;
+      this.rainGain = g;
+    }
+    this.rainGain.gain.setTargetAtTime(Math.max(0, Math.min(1, level)) * 0.16, this.ctx.currentTime, 0.5);
   }
 
   shot() {

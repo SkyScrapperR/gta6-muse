@@ -19,7 +19,10 @@ import {
 import {
   LIT_VERT, LIT_FRAG, SKY_VERT, SKY_FRAG,
   WATER_VERT, WATER_FRAG, PARTICLE_VERT, PARTICLE_FRAG,
+  CONE_VERT, CONE_FRAG,
 } from './shaders.js';
+import { ShadowMap } from './shadows.js';
+import { PostChain } from './post.js';
 import {
   mat4Perspective, mat4LookAt, mat4Multiply, mat4Identity,
   v3Norm, v3Sub, v3Cross,
@@ -28,7 +31,9 @@ import { planesFromMatrix, sphereVisible } from './frustum.js';
 import { unitQuad } from './mesh.js';
 
 function setVec3(gl, loc, v) { if (loc) gl.uniform3f(loc, v[0], v[1], v[2]); }
+function setVec2(gl, loc, x, y) { if (loc) gl.uniform2f(loc, x, y); }
 function setFloat(gl, loc, v) { if (loc) gl.uniform1f(loc, v); }
+function setInt(gl, loc, v) { if (loc) gl.uniform1i(loc, v); }
 function setMat4(gl, loc, m) { if (loc) gl.uniformMatrix4fv(loc, false, m); }
 
 export class Renderer {
@@ -40,6 +45,18 @@ export class Renderer {
     this.skyProg = makeProgram(gl, SKY_VERT, SKY_FRAG);
     this.waterProg = makeProgram(gl, WATER_VERT, WATER_FRAG);
     this.particleProg = makeProgram(gl, PARTICLE_VERT, PARTICLE_FRAG);
+    this.coneProg = makeProgram(gl, CONE_VERT, CONE_FRAG);
+    // Tier 2: directional shadow map + HDR post chain. Both are driven
+    // by the quality preset (see applyQuality in main.js): Low disables
+    // both, Medium uses a 1024 shadow map + bloom, High a 2048 map.
+    this.shadowMap = new ShadowMap(gl);
+    this.post = new PostChain(gl);
+    this.shadowSize = 0; // 0 = shadows off
+    this.postWanted = false; // true on Medium/High (bloom + ACES)
+    this.postActive = false; // true this frame when HDR is really on
+    this.wet = 0; // rain wetness 0..1, from the RainSystem
+    this.lights = null; // LightRegistry, set by main.js
+    this.coneHeight = 60; // heli spotlight cone height, set by the heli
     this.batches = new Map();
     this.width = 0;
     this.height = 0;
@@ -71,6 +88,7 @@ export class Renderer {
     }
     this.gl.viewport(0, 0, this.width, this.height);
     this.aspect = this.width / this.height;
+    if (this.post) this.post.resize(this.width, this.height);
   }
 
   // Register a geometry as an instanced batch. matrices/colors are uploaded
@@ -165,6 +183,33 @@ export class Renderer {
     const up = v3Cross(right, fwd);
     this.camBasis = { fwd, right, up };
     this.tanFov = Math.tan(camera.fov / 2);
+    this.time = time;
+
+    // Shadow pass first: the depth map from the sun, using the instance
+    // buffers the systems uploaded in update() this frame. Then bind the
+    // HDR target (post chain) or the canvas and clear it.
+    if (this.shadowSize > 0) {
+      this.shadowMap.setSize(this.shadowSize);
+      this.shadowMap.render(palette.sunDir, this.cameraPos, () => {
+        for (const [name, batch] of this.batches) {
+          if (name === '__particles') continue;
+          if (!ShadowMap.casts(name)) continue;
+          if (!batch || batch.count === 0) continue;
+          gl.bindVertexArray(batch.mesh.vao);
+          gl.drawElementsInstanced(gl.TRIANGLES, batch.mesh.count, gl.UNSIGNED_INT, 0, batch.count);
+          gl.bindVertexArray(null);
+        }
+      });
+    } else {
+      this.shadowMap.setSize(0);
+    }
+    this.postActive = this.post.enabled && this.postWanted;
+    if (this.postActive) {
+      this.post.begin();
+    } else {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, this.width, this.height);
+    }
 
     gl.clearColor(palette.fogColor[0], palette.fogColor[1], palette.fogColor[2], 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -172,6 +217,7 @@ export class Renderer {
     gl.useProgram(this.lit.program);
     setMat4(gl, this.lit.u.uProj, proj);
     setMat4(gl, this.lit.u.uView, view);
+    setMat4(gl, this.lit.u.uLightVP, this.shadowMap.lightVP);
     setVec3(gl, this.lit.u.uSunDir, palette.sunDir);
     setVec3(gl, this.lit.u.uSunColor, palette.sunColor);
     setVec3(gl, this.lit.u.uHemiSky, palette.hemiSky);
@@ -179,7 +225,27 @@ export class Renderer {
     setVec3(gl, this.lit.u.uFogColor, palette.fogColor);
     setFloat(gl, this.lit.u.uFogDensity, palette.fogDensity);
     setFloat(gl, this.lit.u.uNight, palette.night);
-    this.time = time;
+    setVec3(gl, this.lit.u.uCamPos, this.cameraPos);
+    setFloat(gl, this.lit.u.uWet, this.wet);
+    // With the post chain the HDR value goes to the chain (ACES there);
+    // without it the shader applies its own shoulder.
+    setFloat(gl, this.lit.u.uTonemap, this.postActive ? 0 : 1);
+    setFloat(gl, this.lit.u.uShadowOn, this.shadowSize > 0 ? 1 : 0);
+    setVec2(gl, this.lit.u.uShadowTexel, this.shadowMap.texel, this.shadowMap.texel);
+    if (this.shadowMap.depthTex) {
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.shadowMap.depthTex);
+      setInt(gl, this.lit.u.uShadowMap, 1);
+      gl.activeTexture(gl.TEXTURE0);
+    }
+    // Night point lights from the registry (0 by day — see lights.js).
+    if (this.lights && this.lights.count > 0) {
+      setInt(gl, this.lit.u.uLightCount, this.lights.count);
+      gl.uniform4fv(this.lit.u.uLightPos, this.lights.pos);
+      gl.uniform4fv(this.lit.u.uLightCol, this.lights.col);
+    } else {
+      setInt(gl, this.lit.u.uLightCount, 0);
+    }
   }
 
   drawSky(palette, time) {
@@ -279,9 +345,32 @@ export class Renderer {
     this.drawCalls++;
   }
 
+  // Heli spotlight cone (Tier 2): additive, no depth write, drawn after
+  // the opaque world and before the water so the pool reads through it.
+  drawCone() {
+    const batch = this.batches.get('cone');
+    if (!batch || batch.count === 0) return;
+    const gl = this.gl;
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.depthMask(false);
+    gl.useProgram(this.coneProg.program);
+    const p = this.coneProg.u;
+    setMat4(gl, p.uProj, this.proj);
+    setMat4(gl, p.uView, this.view);
+    setFloat(gl, p.uHeight, this.coneHeight);
+    gl.bindVertexArray(batch.mesh.vao);
+    gl.drawElementsInstanced(gl.TRIANGLES, batch.mesh.count, gl.UNSIGNED_INT, 0, batch.count);
+    gl.bindVertexArray(null);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    this.drawCalls++;
+  }
+
   // The lit program is left bound after beginFrame; restore it after the
   // transparent passes so the next frame's batches draw correctly.
   endFrame() {
+    if (this.postActive) this.post.render();
     this.gl.useProgram(this.lit.program);
   }
 }

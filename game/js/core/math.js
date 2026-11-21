@@ -108,6 +108,20 @@ export function mat4Perspective(fovY, aspect, near, far) {
   return m;
 }
 
+// Orthographic projection, column-major like the rest of the engine.
+// Used for the directional shadow map's light camera.
+export function mat4Ortho(left, right, bottom, top, near, far) {
+  const m = new Float32Array(16);
+  m[0] = 2 / (right - left);
+  m[5] = 2 / (top - bottom);
+  m[10] = -2 / (far - near);
+  m[12] = -(right + left) / (right - left);
+  m[13] = -(top + bottom) / (top - bottom);
+  m[14] = -(far + near) / (far - near);
+  m[15] = 1;
+  return m;
+}
+
 export function mat4LookAt(eye, target, up) {
   const z = v3Norm(v3Sub(eye, target));
   const x = v3Norm(v3Cross(up, z));
